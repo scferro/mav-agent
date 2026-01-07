@@ -6,7 +6,7 @@ from typing import Optional, Union
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel, Field, field_validator
 
-from .tools import PX4ToolBase
+from .tools import MAVLinkToolBase
 from core.parsing import parse_altitude, parse_radius
 
 
@@ -49,7 +49,7 @@ class UpdateMissionItemInput(BaseModel):
     detection_behavior: Optional[str] = Field(None, description="Detection behavior: 'tag_and_continue' (mark targets and continue mission) or 'detect_and_monitor' (abort mission and circle detected target).")
 
 
-class UpdateMissionItemTool(PX4ToolBase):
+class UpdateMissionItemTool(MAVLinkToolBase):
     name: str = "update_mission_item"
     description: str = "Update mission item altitude, radius, and search parameters by sequence number. Use when user wants to modify item properties like height, orbit size, or search behavior. For position changes, use move_item tool. You CANNOT update a mission item TYPE - delete and recreate instead."
     args_schema: type = UpdateMissionItemInput

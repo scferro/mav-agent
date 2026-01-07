@@ -6,7 +6,7 @@ from typing import Optional, List, Union
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel, Field, field_validator
 
-from .tools import PX4ToolBase
+from .tools import MAVLinkToolBase
 from config.settings import get_agent_settings
 from core.parsing import parse_altitude, parse_distance, parse_radius, parse_coordinates
 
@@ -97,7 +97,7 @@ class SurveyInput(BaseModel):
     detection_behavior: Optional[str] = Field(None, description="Detection behavior: 'tag_and_continue' (mark targets and continue mission) or 'detect_and_monitor' (abort mission and circle detected target). Use with search_target")
 
 
-class AddSurveyTool(PX4ToolBase):
+class AddSurveyTool(MAVLinkToolBase):
     name: str = "add_survey"
     description: str = "Create survey pattern for area coverage. Two modes: CENTER+RADIUS (specify center point and radius) or CORNER POINTS (define polygon boundary). The drone can perform AI searches for specified targets with its camera while surverying. Use for survey commands like 'survey 1km radius around this point' or 'search the area bounded by these corners'. Specify Lat/Long OR MGRS OR distance/heading/reference. Do not mix location systems."
     args_schema: type = SurveyInput

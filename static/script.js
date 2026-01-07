@@ -1,9 +1,9 @@
 /**
- * PX4 Agent Web Chat Interface
+ * MAVLink Agent Web Chat Interface
  * JavaScript API client and chat functionality
  */
 
-class PX4AgentClient {
+class MAVLinkAgentClient {
     constructor() {
         this.baseUrl = window.location.origin;
         this.currentMode = 'mission';
@@ -737,5 +737,5 @@ class PX4AgentClient {
 
 // Initialize the client when the page loads
 document.addEventListener('DOMContentLoaded', () => {
-    window.px4Client = new PX4AgentClient();
+    window.mavlinkClient = new MAVLinkAgentClient();
 });

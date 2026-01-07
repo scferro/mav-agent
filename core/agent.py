@@ -1,5 +1,5 @@
 """
-PX4 Agent Main Class
+MAVLink Agent Main Class
 Handles different modes: command, mission_new, mission_update
 """
 
@@ -29,8 +29,8 @@ def create_model_interface():
     else:
         raise ValueError(f"Unsupported model type: {model_type}. Supported types: ollama, tensorrt")
 
-class PX4Agent:
-    """Main PX4 mission planning agent"""
+class MAVLinkAgent:
+    """Main MAVLink mission planning agent"""
     
     def __init__(self, verbose: bool = False):
         self.settings = get_settings()

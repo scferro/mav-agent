@@ -1,5 +1,5 @@
 """
-Universal Unit Conversion System for PX4 Agent
+Universal Unit Conversion System for MAVLink Agent
 Supports conversion between meters, feet, kilometers, miles with easy extensibility
 
 Main function: convert_units(value, from_unit, to_unit)

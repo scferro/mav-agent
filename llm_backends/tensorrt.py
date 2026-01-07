@@ -1,5 +1,5 @@
 """
-TensorRT-LLM Model Interface for PX4 Agent
+TensorRT-LLM Model Interface for MAVLink Agent
 Handles communication with TensorRT-LLM optimized models
 """
 

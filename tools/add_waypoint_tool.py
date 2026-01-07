@@ -6,7 +6,7 @@ from typing import Optional, Union
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel, Field, field_validator
 
-from .tools import PX4ToolBase
+from .tools import MAVLinkToolBase
 from config.settings import get_agent_settings
 from core.parsing import parse_altitude, parse_distance, parse_coordinates
 
@@ -67,7 +67,7 @@ class WaypointInput(BaseModel):
     detection_behavior: Optional[str] = Field(None, description="Detection behavior: 'tag_and_continue' (mark targets and continue mission) or 'detect_and_monitor' (abort mission and circle detected target). Use with search_target")
 
 
-class AddWaypointTool(PX4ToolBase):
+class AddWaypointTool(MAVLinkToolBase):
     name: str = "add_waypoint"
     description: str = "Add waypoint for drone navigation to specific location. Use when user wants drone to fly to a location using exact GPS coordinates or relative directions. Creates flight path point where drone flies to location, flies THROUGH it, then continues to the next mission item. The drone can perform AI searches with its camera while passing through a waypoint. Specify Lat/Long OR MGRS OR distance/heading/reference. Do not mix location systems."
     args_schema: type = WaypointInput

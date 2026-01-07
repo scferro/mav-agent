@@ -1,18 +1,18 @@
 """
-PX4 Mission Validation
+MAVLink Mission Validation
 Handles mission validation logic and safety checks
 """
 
 from typing import List, Tuple, Optional
-from config.settings import PX4AgentSettings
+from config.settings import MAVLinkAgentSettings
 from core.mission import Mission, MissionItem
 from core.units import convert_units
 
 
 class MissionValidator:
     """Handles mission validation logic and safety checks"""
-    
-    def __init__(self, settings: PX4AgentSettings):
+
+    def __init__(self, settings: MAVLinkAgentSettings):
         self.settings = settings
     
     def validate_mission(self, mission: Mission, mode: str) -> Tuple[bool, List[str], List[str]]:

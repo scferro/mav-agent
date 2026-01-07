@@ -1,5 +1,5 @@
 """
-PX4 Agent Models Module
+MAVLink Agent Models Module
 """
 
 from .ollama import OllamaInterface

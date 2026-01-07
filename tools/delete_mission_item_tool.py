@@ -5,7 +5,7 @@ Delete Mission Item Tool - Remove specific mission item by sequence number
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel, Field
 
-from .tools import PX4ToolBase
+from .tools import MAVLinkToolBase
 
 
 class DeleteMissionItemInput(BaseModel):
@@ -14,7 +14,7 @@ class DeleteMissionItemInput(BaseModel):
     seq: int = Field(description="Mission item number to delete (1=first item, 2=second item, etc.). Extract from user phrases like 'remove item 3' (seq=3), 'get rid of the second loiter' (seq depends on context). Use to permantenly remove extraneous mission items.")
 
 
-class DeleteMissionItemTool(PX4ToolBase):
+class DeleteMissionItemTool(MAVLinkToolBase):
     name: str = "delete_mission_item"
     description: str = "Delete specific mission item by its sequence number. Use when user wants to remove a particular item from the mission by specifying its position or when you need to correct a mistake you made. Use for commands like 'delete the second waypoint', 'remove item 1', 'get rid of that survey'. Item is permanently removed and remaining items are renumbered."
     args_schema: type = DeleteMissionItemInput

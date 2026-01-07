@@ -1,5 +1,5 @@
 """
-PX4 Agent Prompts Module
+MAVLink Agent Prompts Module
 """
 
 from .system_prompt import get_system_prompt

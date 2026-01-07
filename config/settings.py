@@ -1,5 +1,5 @@
 """
-PX4 Agent Configuration Management
+MAVLink Agent Configuration Management
 """
 
 from typing import Dict, Any, Optional
@@ -121,16 +121,16 @@ class AgentConfig:
 
 
 @dataclass
-class PX4AgentSettings:
-    """Complete PX4 Agent configuration"""
+class MAVLinkAgentSettings:
+    """Complete MAVLink Agent configuration"""
     model: ModelConfig
     agent: AgentConfig
-    
+
     # Class variable to store singleton instance
-    _instance: Optional['PX4AgentSettings'] = None
-    
+    _instance: Optional['MAVLinkAgentSettings'] = None
+
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'PX4AgentSettings':
+    def from_dict(cls, data: Dict[str, Any]) -> 'MAVLinkAgentSettings':
         """Create settings from dictionary"""
         return cls(
             model=ModelConfig(**data.get('model', {})),
@@ -138,13 +138,13 @@ class PX4AgentSettings:
         )
     
     @classmethod
-    def load(cls, config_path: Optional[str] = None) -> 'PX4AgentSettings':
+    def load(cls, config_path: Optional[str] = None) -> 'MAVLinkAgentSettings':
         """Load settings from file or environment"""
         if config_path is None:
             # Look for config in common locations
             possible_paths = [
-                Path.cwd() / "px4_agent_config.json",
-                Path.home() / ".px4_agent" / "config.json",
+                Path.cwd() / "mavlink_agent_config.json",
+                Path.home() / ".mavlink_agent" / "config.json",
                 Path(__file__).parent / "default_config.json"
             ]
             
@@ -165,13 +165,13 @@ class PX4AgentSettings:
             )
 
 # Global settings instance
-_settings: Optional[PX4AgentSettings] = None
+_settings: Optional[MAVLinkAgentSettings] = None
 
-def get_settings() -> PX4AgentSettings:
+def get_settings() -> MAVLinkAgentSettings:
     """Get global settings instance"""
     global _settings
     if _settings is None:
-        _settings = PX4AgentSettings.load()
+        _settings = MAVLinkAgentSettings.load()
     return _settings
 
 def get_model_settings() -> Dict[str, Any]:
@@ -187,14 +187,14 @@ def get_agent_settings() -> Dict[str, Any]:
 def reload_settings(config_path: Optional[str] = None):
     """Reload settings from file"""
     global _settings
-    _settings = PX4AgentSettings.load(config_path)
+    _settings = MAVLinkAgentSettings.load(config_path)
 
-def update_takeoff_settings(latitude: float = None, longitude: float = None, heading: str = None, 
+def update_takeoff_settings(latitude: float = None, longitude: float = None, heading: str = None,
                            altitude: float = None, altitude_units: str = None):
     """Update takeoff settings at runtime"""
     global _settings
     if _settings is None:
-        _settings = PX4AgentSettings.load()
+        _settings = MAVLinkAgentSettings.load()
     
     # Update provided fields with validation
     if latitude is not None:
@@ -241,7 +241,7 @@ def update_current_action_settings(action_type: str, latitude: float = None, lon
     """Update current action settings at runtime"""
     global _settings
     if _settings is None:
-        _settings = load_settings()
+        _settings = MAVLinkAgentSettings.load()
     
     # Validate action type
     allowed_types = ['takeoff', 'waypoint', 'loiter', 'survey']

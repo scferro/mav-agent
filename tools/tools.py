@@ -1,5 +1,5 @@
 """
-PX4 Mission Planning Tools - Main module
+MAVLink Mission Planning Tools - Main module
 Contains shared functions, schemas, and tool registry
 """
 
@@ -47,8 +47,8 @@ MODEL_PARAMETER_SCHEMAS = {
 }
 
 # Base class for all mission item tools
-class PX4ToolBase(BaseTool):
-    """Base class providing shared functionality for all PX4 tools"""
+class MAVLinkToolBase(BaseTool):
+    """Base class providing shared functionality for all MAVLink tools"""
     
     def __init__(self, mission_manager: MissionManager):
         super().__init__()
@@ -155,7 +155,7 @@ class PX4ToolBase(BaseTool):
             return "coordinates not specified"
 
 def get_command_tools(mission_manager: MissionManager) -> list:
-    """Get PX4 tools for command mode - add tools + update only"""
+    """Get MAVLink tools for command mode - add tools + update only"""
     from .add_waypoint_tool import AddWaypointTool
     from .add_takeoff_tool import AddTakeoffTool
     from .add_rtl_tool import AddRTLTool
@@ -173,7 +173,7 @@ def get_command_tools(mission_manager: MissionManager) -> list:
     ]
 
 def get_mission_tools(mission_manager: MissionManager) -> list:
-    """Get all PX4 mission planning tools for mission mode"""
+    """Get all MAVLink mission planning tools for mission mode"""
     from .add_waypoint_tool import AddWaypointTool
     from .add_takeoff_tool import AddTakeoffTool
     from .add_rtl_tool import AddRTLTool
@@ -203,6 +203,6 @@ def get_tools_for_mode(mission_manager: MissionManager, mode: str) -> list:
     else:
         return get_mission_tools(mission_manager)
 
-def get_px4_tools(mission_manager: MissionManager) -> list:
-    """Get all PX4 mission planning tools (legacy function - defaults to mission mode)"""
+def get_mavlink_tools(mission_manager: MissionManager) -> list:
+    """Get all MAVLink mission planning tools (legacy function - defaults to mission mode)"""
     return get_mission_tools(mission_manager)

@@ -1,5 +1,5 @@
 """
-Ollama Model Interface for PX4 Agent
+Ollama Model Interface for MAVLink Agent
 Handles communication with Ollama models
 """
 

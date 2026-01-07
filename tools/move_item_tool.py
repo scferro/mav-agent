@@ -6,7 +6,7 @@ from typing import Optional, Union
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel, Field, field_validator
 
-from .tools import PX4ToolBase
+from .tools import MAVLinkToolBase
 from core.parsing import parse_distance, parse_coordinates
 
 
@@ -45,7 +45,7 @@ class MoveItemInput(BaseModel):
         return (lat, lon)
 
 
-class MoveItemTool(PX4ToolBase):
+class MoveItemTool(MAVLinkToolBase):
     name: str = "move_item"
     description: str = "Move mission item to new geographical position using GPS coordinates, MGRS, or relative positioning. For changing altitude, radius, or search parameters, use update_mission_item tool instead."
     args_schema: type = MoveItemInput

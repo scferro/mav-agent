@@ -1,5 +1,5 @@
 """
-PX4 Mission Manager
+MAVLink Mission Manager
 Manages single current mission and validation
 """
 

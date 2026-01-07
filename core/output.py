@@ -1,5 +1,5 @@
 """
-Output formatting and display utilities for PX4 Agent
+Output formatting and display utilities for MAVLink Agent
 """
 
 from typing import Dict, Any, List, Optional

@@ -1,12 +1,12 @@
 version: '3.8'
 
 services:
-  px4-agent:
+  mav-agent:
     build:
       context: .
       dockerfile: Dockerfile
-    image: px4-agent:tensorrt
-    container_name: px4-agent-server
+    image: mav-agent:tensorrt
+    container_name: mav-agent-server
     network_mode: host
     runtime: nvidia
     environment:

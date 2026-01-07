@@ -6,7 +6,7 @@ from typing import Optional, Union
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel, Field, field_validator
 
-from .tools import PX4ToolBase
+from .tools import MAVLinkToolBase
 from config.settings import get_agent_settings
 from core.parsing import parse_altitude
 
@@ -31,7 +31,7 @@ class RTLInput(BaseModel):
         return (parsed_value, units)
 
 
-class AddRTLTool(PX4ToolBase):
+class AddRTLTool(MAVLinkToolBase):
     name: str = "add_rtl"
     description: str = "Add return to launch command to automatically fly back to takeoff point and land. Always inserted as the LAST mission item. Use when the drone should return home, land, or come back."
     args_schema: type = RTLInput

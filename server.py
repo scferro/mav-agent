@@ -1,6 +1,6 @@
 """
-PX4 Agent Flask Server
-Hosts the complete PX4Agent with LLM and mission management via HTTP APIs
+MAVLink Agent Flask Server
+Hosts the complete MAVLinkAgent with LLM and mission management via HTTP APIs
 """
 
 import sys
@@ -13,19 +13,19 @@ from typing import Dict, Any, Optional
 import traceback
 import logging
 
-from core import PX4Agent
+from core import MAVLinkAgent
 from config import get_settings, reload_settings, update_takeoff_settings, get_current_takeoff_settings, update_current_action_settings, get_current_action_settings
 
 
-class PX4AgentServer:
-    """Flask server hosting PX4Agent"""
+class MAVLinkAgentServer:
+    """Flask server hosting MAVLinkAgent"""
     
     def __init__(self, verbose: bool = False):
         self.app = Flask(__name__)
         CORS(self.app)  # Enable CORS for all routes
         
-        # Initialize PX4Agent
-        self.agent: Optional[PX4Agent] = None
+        # Initialize MAVLinkAgent
+        self.agent: Optional[MAVLinkAgent] = None
         self.verbose = verbose
         
         # Setup logging
@@ -63,12 +63,12 @@ class PX4AgentServer:
         return cleaned
     
     def _initialize_agent(self):
-        """Initialize the PX4Agent instance"""
+        """Initialize the MAVLinkAgent instance"""
         try:
-            self.agent = PX4Agent(verbose=self.verbose)
-            print(f"🚁 PX4Agent initialized (verbose={self.verbose})")
+            self.agent = MAVLinkAgent(verbose=self.verbose)
+            print(f"🚁 MAVLinkAgent initialized (verbose={self.verbose})")
         except Exception as e:
-            print(f"❌ Failed to initialize PX4Agent: {e}")
+            print(f"❌ Failed to initialize MAVLinkAgent: {e}")
             self.agent = None
     
     def _setup_routes(self):
@@ -99,7 +99,7 @@ class PX4AgentServer:
             if not self.agent:
                 return jsonify({
                     "success": False,
-                    "error": "PX4Agent not initialized",
+                    "error": "MAVLinkAgent not initialized",
                     "output": "Server error: Agent not available"
                 }), 500
             
@@ -137,7 +137,7 @@ class PX4AgentServer:
             if not self.agent:
                 return jsonify({
                     "success": False,
-                    "error": "PX4Agent not initialized",
+                    "error": "MAVLinkAgent not initialized",
                     "output": "Server error: Agent not available"
                 }), 500
             
@@ -175,7 +175,7 @@ class PX4AgentServer:
             if not self.agent:
                 return jsonify({
                     "success": False,
-                    "error": "PX4Agent not initialized"
+                    "error": "MAVLinkAgent not initialized"
                 }), 500
             
             try:
@@ -200,7 +200,7 @@ class PX4AgentServer:
             if not self.agent:
                 return jsonify({
                     "success": False,
-                    "error": "PX4Agent not initialized"
+                    "error": "MAVLinkAgent not initialized"
                 }), 500
             
             try:
@@ -459,7 +459,7 @@ class PX4AgentServer:
     
     def run(self, host='0.0.0.0', port=5000, debug=False):
         """Run the Flask server"""
-        print(f"🌐 Starting PX4Agent server on http://{host}:{port}")
+        print(f"🌐 Starting MAVLinkAgent server on http://{host}:{port}")
         print(f"📍 Mission endpoint: POST http://{host}:{port}/api/mission")
         print(f"⚡ Command endpoint: POST http://{host}:{port}/api/command")
         print(f"💚 Status endpoint: GET http://{host}:{port}/api/status")
@@ -471,7 +471,7 @@ def main():
     """Main server entry point"""
     import argparse
     
-    parser = argparse.ArgumentParser(description="PX4 Agent Flask Server")
+    parser = argparse.ArgumentParser(description="MAVLink Agent Flask Server")
     parser.add_argument("--host", default="0.0.0.0", help="Host to bind to")
     parser.add_argument("--port", type=int, default=5000, help="Port to bind to")
     parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose output")
@@ -494,7 +494,7 @@ def main():
 
     # Create and run server
     try:
-        server = PX4AgentServer(verbose=verbose)
+        server = MAVLinkAgentServer(verbose=verbose)
         server.run(host=args.host, port=args.port, debug=args.debug)
     except Exception as e:
         print(f"❌ Server failed to start: {e}")

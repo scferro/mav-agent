@@ -6,7 +6,7 @@ from typing import Optional, Union
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel, Field, field_validator
 
-from .tools import PX4ToolBase
+from .tools import MAVLinkToolBase
 from config.settings import get_agent_settings
 from core.parsing import parse_altitude, parse_distance, parse_radius, parse_coordinates
 
@@ -79,7 +79,7 @@ class LoiterInput(BaseModel):
     detection_behavior: Optional[str] = Field(None, description="Detection behavior: 'tag_and_continue' (mark targets and continue mission) or 'detect_and_monitor' (abort mission and circle detected target). Use with search_target")
     
 
-class AddLoiterTool(PX4ToolBase):
+class AddLoiterTool(MAVLinkToolBase):
     name: str = "add_loiter"
     description: str = "Add circular orbit/loiter pattern at specified location. Use when user wants drone to fly in circles, orbit, or loiter. The drone can perform AI searches with its camera while loitering. Use for commands like 'orbit', 'circle', 'loiter', or when radius is mentioned like 'circle 2 miles north with 200m radius'. Specify Lat/Long OR MGRS OR distance/heading/reference. Do not mix location systems."
     args_schema: type = LoiterInput

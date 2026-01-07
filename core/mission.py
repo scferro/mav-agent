@@ -1,5 +1,5 @@
 """
-PX4 Mission State Management
+MAVLink Mission State Management
 Handles mission creation, validation, and state tracking
 """
 

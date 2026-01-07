@@ -5,7 +5,7 @@ Reorder Item Tool - Reposition mission item to different sequence position
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel, Field
 
-from .tools import PX4ToolBase
+from .tools import MAVLinkToolBase
 
 
 class ReorderItemInput(BaseModel):
@@ -15,7 +15,7 @@ class ReorderItemInput(BaseModel):
     insert_at: int = Field(description="New position where item should be moved (1=first position, 2=second position, etc.).")
 
 
-class ReorderItemTool(PX4ToolBase):
+class ReorderItemTool(MAVLinkToolBase):
     name: str = "reorder_item"
     description: str = "Reorder mission items by moving one item to a different sequence position. Use when user wants to change the order of mission execution or when an item ends up in an unexpected sequence position. All other items automatically shift to accommodate the reorder."
     args_schema: type = ReorderItemInput

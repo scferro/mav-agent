@@ -1,10 +1,10 @@
-# PX4 Agent with TensorRT-LLM
+# MAVLink Agent with TensorRT-LLM
 
 Intelligent drone mission planning agent using natural language. Built with LangChain and NVIDIA TensorRT-LLM for GPU-accelerated inference with the Qwen3-4B language model.
 
 ## Overview
 
-Transform natural language commands into validated PX4 drone missions. Say "take off to 150 feet heading north, fly to the park, then survey the area" and the agent handles the rest.
+Transform natural language commands into validated MAVLink drone missions. Say "take off to 150 feet heading north, fly to the park, then survey the area" and the agent handles the rest.
 
 **Key Features:**
 - Natural language mission planning
@@ -158,13 +158,13 @@ Exit container when done:
 exit
 ```
 
-### Step 4: Build PX4 Agent Docker Image
+### Step 4: Build MAVLink Agent Docker Image
 
 ```bash
 cd <path-to-repo>/px4-agent
 
 # Build image
-docker compose build px4-agent
+docker compose build mav-agent
 ```
 
 ### Step 5: Configure Paths
@@ -302,7 +302,7 @@ MIT License
 
 ## Support
 
-- **Issues**: https://github.com/yourusername/px4-agent/issues
+- **Issues**: https://github.com/yourusername/mav-agent/issues
 - **TensorRT-LLM**: https://github.com/NVIDIA/TensorRT-LLM
 
 ## Acknowledgments

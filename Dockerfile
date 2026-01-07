@@ -4,10 +4,10 @@ FROM nvcr.io/nvidia/tensorrt-llm/release:1.0.0
 # Set working directory
 WORKDIR /app
 
-# Copy px4-agent code
+# Copy mav-agent code
 COPY . /app/
 
-# Install px4-agent Python dependencies
+# Install mav-agent Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Expose Flask server port

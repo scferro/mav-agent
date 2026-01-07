@@ -6,7 +6,7 @@ from typing import Optional, Union
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel, Field, field_validator
 
-from .tools import PX4ToolBase
+from .tools import MAVLinkToolBase
 from config.settings import get_agent_settings
 from core.parsing import parse_altitude, parse_coordinates
 
@@ -48,7 +48,7 @@ class TakeoffInput(BaseModel):
     heading: Optional[str] = Field(None, description="Direction VTOL will point during transition to forward flight: 'north', 'northeast', 'east', 'southeast', 'south', 'southwest', 'west', 'northwest'. Typically into the wind. Use ONLY when direction is specified.")
 
 
-class AddTakeoffTool(PX4ToolBase):
+class AddTakeoffTool(MAVLinkToolBase):
     name: str = "add_takeoff"
     description: str = "Add takeoff command to launch drone from ground to flight altitude. Always inserted as the FIRST mission item. Use when user wants drone to take off, launch, or lift off. Use for commands like 'takeoff', 'launch', 'lift off', especially when altitude is specified like 'takeoff to 200 feet', 'launch to 100 meters'."
     args_schema: type = TakeoffInput
