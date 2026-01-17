@@ -96,20 +96,6 @@ def parse_radius(value: Union[str, int, float, None]) -> Tuple[Optional[float], 
     return parse_measurement(value, default_units='meters')
 
 
-# Convenience function for validation in Pydantic models
-def create_measurement_validator(default_units: str = 'meters'):
-    """Create a Pydantic validator function for measurement fields"""
-    def validator(v):
-        if v is None:
-            return None
-        parsed_value, units = parse_measurement(v, default_units)
-        if parsed_value is None:
-            # Return original value to let Pydantic handle the validation error
-            return v
-        return (parsed_value, units)
-    return validator
-
-
 def parse_coordinates(value: Union[str, tuple, None]) -> Tuple[Optional[float], Optional[float]]:
     """
     Parse coordinate string into (latitude, longitude) tuple.

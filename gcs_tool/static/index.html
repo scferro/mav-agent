@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MAVLink Agent</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <div class="header-content">
+                <h1>🚁 MAVLink Agent</h1>
+                <div class="connection-status" id="connectionStatus">
+                    <span class="status-dot" id="statusDot"></span>
+                    <span id="statusText">Connecting...</span>
+                </div>
+            </div>
+        </header>
+
+        <div class="main-content">
+            <!-- Telemetry Panel -->
+            <div class="telemetry-panel" id="telemetryPanel">
+                <div class="telemetry-header">
+                    <h3>🚁 MAVLink GCS</h3>
+                    <span class="telemetry-status-large" id="telemetryStatus">🔴 Disconnected</span>
+                </div>
+                <div class="connection-help" id="connectionHelp">
+                    <p><strong>To connect MAVLink:</strong></p>
+                    <ol>
+                        <li>Start SITL simulation:<br><code>sim_vehicle.py -v ArduCopter --console --map</code></li>
+                        <li>Start LLM Server:<br><code>python server.py</code></li>
+                        <li>Start GCS Server (connects automatically to SITL):<br><code>python gcs_server.py</code></li>
+                        <li>Telemetry will appear below when connected</li>
+                    </ol>
+                    <p>Or start GCS server with custom MAVLink connection:</p>
+                    <code>python gcs_server.py --mavlink=udpin:0.0.0.0:14550</code>
+                </div>
+                <div class="telemetry-grid">
+                    <div class="telemetry-item">
+                        <label>Home:</label>
+                        <span id="telemHome">--</span>
+                    </div>
+                    <div class="telemetry-item">
+                        <label>Position:</label>
+                        <span id="telemPosition">--</span>
+                    </div>
+                    <div class="telemetry-item">
+                        <label>Altitude:</label>
+                        <span id="telemAltitude">--</span>
+                    </div>
+                    <div class="telemetry-item">
+                        <label>Heading:</label>
+                        <span id="telemHeading">--</span>
+                    </div>
+                    <div class="telemetry-item">
+                        <label>Armed:</label>
+                        <span id="telemArmed">--</span>
+                    </div>
+                </div>
+                <div class="telemetry-actions">
+                    <button id="btnDownloadMission" class="telemetry-btn" disabled>Download Mission</button>
+                    <button id="btnUploadMission" class="telemetry-btn" disabled>Upload Mission</button>
+                </div>
+            </div>
+
+            <div class="mode-selector">
+                <button class="mode-btn active" id="missionModeBtn" data-mode="mission">
+                    📋 Mission Mode
+                </button>
+                <button class="mode-btn" id="commandModeBtn" data-mode="command">
+                    ⚡ Command Mode
+                </button>
+            </div>
+
+            <div class="mode-description">
+                <div class="mode-desc active" id="missionDesc">
+                    <strong>Mission Mode:</strong> Interactive mission building - build complex multi-step missions
+                </div>
+                <div class="mode-desc" id="commandDesc">
+                    <strong>Command Mode:</strong> Single commands with reset - each command creates a fresh mission
+                </div>
+            </div>
+
+            <!-- GCS Connection Banner -->
+            <div class="connection-banner" id="connectionBanner" style="display: none;">
+                <div class="banner-content">
+                    <span class="banner-icon">⚠️</span>
+                    <div class="banner-message">
+                        <strong>GCS Connection Required</strong>
+                        <p>Connect to MAVLink GCS to enable mission planning. The system needs home position and telemetry data.</p>
+                    </div>
+                    <button id="retryConnectionBtn" class="banner-btn">Retry Connection</button>
+                </div>
+            </div>
+
+            <div class="chat-container">
+                <div class="chat-messages" id="chatMessages">
+                    <div class="welcome-message">
+                        <div class="agent-message">
+                            <div class="message-content">
+                                <p>Welcome to MAVLink Agent! 🚁</p>
+                                <p>I'm here to help you plan drone missions. Choose a mode above and start by typing a request.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mission-state" id="missionState">
+                    <h3>📋 Current Mission</h3>
+                    <div class="mission-items" id="missionItems">
+                        <div class="empty-mission">No mission items yet</div>
+                    </div>
+                </div>
+
+                <div class="input-container">
+                    <div class="input-wrapper">
+                        <textarea 
+                            id="messageInput" 
+                            placeholder="Type your mission command...&#10;&#10;You can write multiple lines here.&#10;Use the send button to submit." 
+                            rows="4"
+                        ></textarea>
+                        <button id="sendButton" disabled>
+                            <span class="send-icon">➤</span>
+                        </button>
+                    </div>
+                    <div class="input-help">
+                        Click Send button to submit • Type 'show' to review mission • Commands: takeoff, waypoint, loiter, survey, rtl
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="spinner"></div>
+        <p>Processing your request...</p>
+    </div>
+
+    <!-- Socket.IO client for Flask-SocketIO WebSocket connection -->
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+
+    <!-- Main application script -->
+    <script src="/static/script.js"></script>
+</body>
+</html>

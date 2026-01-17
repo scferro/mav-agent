@@ -3,12 +3,10 @@ Add RTL Tool - Return to launch command
 """
 
 from typing import Optional, Union
-from langchain_core.tools import BaseTool
 from pydantic import BaseModel, Field, field_validator
 
-from .tools import MAVLinkToolBase
+from .tools import MAVLinkToolBase, validate_altitude, unpack_measurement
 from config.settings import get_agent_settings
-from core.parsing import parse_altitude
 
 # Load agent settings for Field descriptions
 _agent_settings = get_agent_settings()
@@ -23,12 +21,7 @@ class RTLInput(BaseModel):
     @field_validator('altitude', mode='before')
     @classmethod
     def parse_altitude_field(cls, v):
-        if v is None:
-            return None
-        parsed_value, units = parse_altitude(v)
-        if parsed_value is None:
-            return v  # Let Pydantic handle validation error
-        return (parsed_value, units)
+        return validate_altitude(v)
 
 
 class AddRTLTool(MAVLinkToolBase):
@@ -45,11 +38,8 @@ class AddRTLTool(MAVLinkToolBase):
 
         # Populate response
         try:
-            # Parse measurement tuples from validators
-            if isinstance(altitude, tuple):
-                altitude_value, altitude_units = altitude
-            else:
-                altitude_value, altitude_units = altitude, 'meters'
+            # Unpack measurement tuple from validator
+            altitude_value, altitude_units = unpack_measurement(altitude)
             
             # Save current mission state for potential rollback
             saved_state = self._save_mission_state()

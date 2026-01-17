@@ -1,0 +1,11 @@
+# Flask server dependencies
+flask>=3.0.0
+flask-cors>=4.0.0
+flask-socketio>=5.3.5
+python-socketio>=5.10.0
+
+# MAVLink for GCS server
+pymavlink>=2.4.40
+
+# HTTP client for calling LLM server
+requests>=2.31.0

@@ -3,11 +3,9 @@ Update Mission Item Tool - Modify specific mission item by sequence number
 """
 
 from typing import Optional, Union
-from langchain_core.tools import BaseTool
 from pydantic import BaseModel, Field, field_validator
 
-from .tools import MAVLinkToolBase
-from core.parsing import parse_altitude, parse_radius
+from .tools import MAVLinkToolBase, validate_altitude, validate_radius, unpack_measurement
 
 
 class UpdateMissionItemInput(BaseModel):
@@ -26,22 +24,12 @@ class UpdateMissionItemInput(BaseModel):
     @field_validator('altitude', mode='before')
     @classmethod
     def parse_altitude_field(cls, v):
-        if v is None:
-            return None
-        parsed_value, units = parse_altitude(v)
-        if parsed_value is None:
-            return v  # Let Pydantic handle validation error
-        return (parsed_value, units)
-    
+        return validate_altitude(v)
+
     @field_validator('radius', mode='before')
     @classmethod
     def parse_radius_field(cls, v):
-        if v is None:
-            return None
-        parsed_value, units = parse_radius(v)
-        if parsed_value is None:
-            return v  # Let Pydantic handle validation error
-        return (parsed_value, units)
+        return validate_radius(v)
     
     
     # Search parameters
@@ -65,16 +53,9 @@ class UpdateMissionItemTool(MAVLinkToolBase):
 
         # Populate response
         try:
-            # Parse measurement tuples from validators
-            if isinstance(altitude, tuple):
-                altitude_value, altitude_units = altitude
-            else:
-                altitude_value, altitude_units = altitude, 'meters'
-            
-            if isinstance(radius, tuple):
-                radius_value, radius_units = radius
-            else:
-                radius_value, radius_units = radius, 'meters'
+            # Unpack measurement tuples from validators
+            altitude_value, altitude_units = unpack_measurement(altitude)
+            radius_value, radius_units = unpack_measurement(radius)
             
             mission = self.mission_manager.get_mission()
             if not mission or not mission.items:

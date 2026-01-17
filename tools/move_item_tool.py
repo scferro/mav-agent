@@ -3,11 +3,9 @@ Move Item Tool - Change geographical position of mission item
 """
 
 from typing import Optional, Union
-from langchain_core.tools import BaseTool
 from pydantic import BaseModel, Field, field_validator
 
-from .tools import MAVLinkToolBase
-from core.parsing import parse_distance, parse_coordinates
+from .tools import MAVLinkToolBase, validate_distance, validate_coordinates, unpack_measurement, unpack_coordinates
 
 
 class MoveItemInput(BaseModel):
@@ -27,22 +25,12 @@ class MoveItemInput(BaseModel):
     @field_validator('distance', mode='before')
     @classmethod
     def parse_distance_field(cls, v):
-        if v is None:
-            return None
-        parsed_value, units = parse_distance(v)
-        if parsed_value is None:
-            return v  # Let Pydantic handle validation error
-        return (parsed_value, units)
-    
+        return validate_distance(v)
+
     @field_validator('coordinates', mode='before')
     @classmethod
     def parse_coordinates_field(cls, v):
-        if v is None:
-            return None
-        lat, lon = parse_coordinates(v)
-        if lat is None or lon is None:
-            return v  # Let Pydantic handle validation error
-        return (lat, lon)
+        return validate_coordinates(v)
 
 
 class MoveItemTool(MAVLinkToolBase):
@@ -58,17 +46,9 @@ class MoveItemTool(MAVLinkToolBase):
              relative_reference_frame: Optional[str] = None) -> str:
         
         try:
-            # Parse measurement tuples from validators
-            if isinstance(distance, tuple):
-                distance_value, distance_units = distance
-            else:
-                distance_value, distance_units = distance, 'meters'
-            
-            # Parse coordinates from validator
-            if isinstance(coordinates, tuple):
-                latitude, longitude = coordinates
-            else:
-                latitude, longitude = None, None
+            # Unpack measurement tuples from validators
+            distance_value, distance_units = unpack_measurement(distance)
+            latitude, longitude = unpack_coordinates(coordinates)
             
             mission = self.mission_manager.get_mission()
             if not mission or not mission.items:

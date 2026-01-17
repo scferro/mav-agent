@@ -3,12 +3,10 @@ Add Takeoff Tool - Launch drone from ground to flight altitude
 """
 
 from typing import Optional, Union
-from langchain_core.tools import BaseTool
 from pydantic import BaseModel, Field, field_validator
 
-from .tools import MAVLinkToolBase
+from .tools import MAVLinkToolBase, validate_altitude, validate_coordinates, unpack_measurement, unpack_coordinates
 from config.settings import get_agent_settings
-from core.parsing import parse_altitude, parse_coordinates
 
 # Load agent settings for Field descriptions
 _agent_settings = get_agent_settings()
@@ -27,22 +25,12 @@ class TakeoffInput(BaseModel):
     @field_validator('altitude', mode='before')
     @classmethod
     def parse_altitude_field(cls, v):
-        if v is None:
-            return None
-        parsed_value, units = parse_altitude(v)
-        if parsed_value is None:
-            return v  # Let Pydantic handle validation error
-        return (parsed_value, units)
-    
+        return validate_altitude(v)
+
     @field_validator('coordinates', mode='before')
     @classmethod
     def parse_coordinates_field(cls, v):
-        if v is None:
-            return None
-        lat, lon = parse_coordinates(v)
-        if lat is None or lon is None:
-            return v  # Let Pydantic handle validation error
-        return (lat, lon)
+        return validate_coordinates(v)
     
     # VTOL transition heading
     heading: Optional[str] = Field(None, description="Direction VTOL will point during transition to forward flight: 'north', 'northeast', 'east', 'southeast', 'south', 'southwest', 'west', 'northwest'. Typically into the wind. Use ONLY when direction is specified.")
@@ -63,17 +51,9 @@ class AddTakeoffTool(MAVLinkToolBase):
 
         # Populate response
         try:
-            # Parse measurement tuples from validators
-            if isinstance(altitude, tuple):
-                altitude_value, altitude_units = altitude
-            else:
-                altitude_value, altitude_units = altitude, 'meters'
-            
-            # Parse coordinates from validator
-            if isinstance(coordinates, tuple):
-                latitude, longitude = coordinates
-            else:
-                latitude, longitude = None, None
+            # Unpack measurement tuples from validators
+            altitude_value, altitude_units = unpack_measurement(altitude)
+            latitude, longitude = unpack_coordinates(coordinates)
             
             # Save current mission state for potential rollback
             saved_state = self._save_mission_state()

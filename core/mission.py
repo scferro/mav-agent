@@ -101,19 +101,7 @@ class Mission:
     items: List[MissionItem] = field(default_factory=list)
     created_at: datetime = field(default_factory=datetime.now)
     modified_at: datetime = field(default_factory=datetime.now)
-    
-    def add_item(self, item: MissionItem) -> MissionItem:
-        """Add mission item to end of mission"""
-        item.seq = len(self.items)
-        self.items.append(item)
-        self.modified_at = datetime.now()
-        return item
-    
-    def clear_items(self):
-        """Remove all mission items"""
-        self.items.clear()
-        self.modified_at = datetime.now()
-    
+
     def to_dict(self, convert_to_absolute: bool = False) -> Dict[str, Any]:
         """Convert to dictionary format
         

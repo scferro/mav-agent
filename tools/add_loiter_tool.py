@@ -3,12 +3,10 @@ Add Loiter Tool - Create circular orbit/loiter pattern
 """
 
 from typing import Optional, Union
-from langchain_core.tools import BaseTool
 from pydantic import BaseModel, Field, field_validator
 
-from .tools import MAVLinkToolBase
+from .tools import MAVLinkToolBase, validate_altitude, validate_distance, validate_radius, validate_coordinates, unpack_measurement, unpack_coordinates
 from config.settings import get_agent_settings
-from core.parsing import parse_altitude, parse_distance, parse_radius, parse_coordinates
 
 # Load agent settings for Field descriptions
 _agent_settings = get_agent_settings()
@@ -34,42 +32,22 @@ class LoiterInput(BaseModel):
     @field_validator('distance', mode='before')
     @classmethod
     def parse_distance_field(cls, v):
-        if v is None:
-            return None
-        parsed_value, units = parse_distance(v)
-        if parsed_value is None:
-            return v  # Let Pydantic handle validation error
-        return (parsed_value, units)
-    
+        return validate_distance(v)
+
     @field_validator('radius', mode='before')
     @classmethod
     def parse_radius_field(cls, v):
-        if v is None:
-            return None
-        parsed_value, units = parse_radius(v)
-        if parsed_value is None:
-            return v  # Let Pydantic handle validation error
-        return (parsed_value, units)
-    
+        return validate_radius(v)
+
     @field_validator('altitude', mode='before')
     @classmethod
     def parse_altitude_field(cls, v):
-        if v is None:
-            return None
-        parsed_value, units = parse_altitude(v)
-        if parsed_value is None:
-            return v  # Let Pydantic handle validation error
-        return (parsed_value, units)
-    
+        return validate_altitude(v)
+
     @field_validator('coordinates', mode='before')
     @classmethod
     def parse_coordinates_field(cls, v):
-        if v is None:
-            return None
-        lat, lon = parse_coordinates(v)
-        if lat is None or lon is None:
-            return v  # Let Pydantic handle validation error
-        return (lat, lon)
+        return validate_coordinates(v)
     
     # Insertion position
     seq: Optional[int] = Field(None, description="Position to insert loiter in mission (1-based index). The loiter will be inserted AT this position, shifting existing items down. Example: seq=2 means the new loiter becomes item #2, and the old item #2 becomes item #3. Omit to add at end.")
@@ -93,27 +71,11 @@ class AddLoiterTool(MAVLinkToolBase):
              radius: Optional[Union[float, tuple]] = None, seq: Optional[int] = None,
              search_target: Optional[str] = None, detection_behavior: Optional[str] = None) -> str:
         try:
-            # Parse measurement tuples from validators
-            if isinstance(distance, tuple):
-                distance_value, distance_units = distance
-            else:
-                distance_value, distance_units = distance, 'meters'
-            
-            if isinstance(altitude, tuple):
-                altitude_value, altitude_units = altitude
-            else:
-                altitude_value, altitude_units = altitude, 'meters'
-            
-            if isinstance(radius, tuple):
-                radius_value, radius_units = radius
-            else:
-                radius_value, radius_units = radius, 'meters'
-            
-            # Parse coordinates from validator
-            if isinstance(coordinates, tuple):
-                latitude, longitude = coordinates
-            else:
-                latitude, longitude = None, None
+            # Unpack measurement tuples from validators
+            distance_value, distance_units = unpack_measurement(distance)
+            altitude_value, altitude_units = unpack_measurement(altitude)
+            radius_value, radius_units = unpack_measurement(radius)
+            latitude, longitude = unpack_coordinates(coordinates)
             
             # Save current mission state for potential rollback
             saved_state = self._save_mission_state()

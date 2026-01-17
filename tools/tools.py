@@ -1,50 +1,90 @@
 """
 MAVLink Mission Planning Tools - Main module
-Contains shared functions, schemas, and tool registry
+Contains base class, shared utilities, and tool registry
 """
 
-from typing import Dict, Any, Optional, List
+from typing import Tuple, Optional, Any
 from langchain_core.tools import BaseTool
-from pydantic import BaseModel, Field
 
 from core.manager import MissionManager
 from config.settings import get_agent_settings
+from core.parsing import parse_altitude, parse_distance, parse_radius, parse_coordinates
 
 
-# Model Parameter Schemas - Maps command types to ALL parameters the model can return
-MODEL_PARAMETER_SCHEMAS = {
-    'takeoff': {
-        'Location Parameters': ['latitude', 'longitude', 'mgrs'],
-        'Altitude Parameters': ['altitude', 'altitude_units'],
-        'VTOL Parameters': ['heading'],
-        'Search Parameters': ['search_target', 'detection_behavior']
-    },
-    'waypoint': {
-        'GPS Coordinates': ['latitude', 'longitude', 'mgrs'],
-        'Relative Positioning': ['distance', 'heading', 'distance_units', 'relative_reference_frame'],
-        'Altitude Parameters': ['altitude', 'altitude_units'],
-        'Search Parameters': ['search_target', 'detection_behavior']
-    },
-    'loiter': {
-        'GPS Coordinates': ['latitude', 'longitude', 'mgrs'],
-        'Relative Positioning': ['distance', 'heading', 'distance_units', 'relative_reference_frame'],
-        'Orbit Parameters': ['radius', 'radius_units'],
-        'Altitude Parameters': ['altitude', 'altitude_units'],
-        'Search Parameters': ['search_target', 'detection_behavior']
-    },
-    'rtl': {
-        'Altitude Parameters': ['altitude', 'altitude_units'],
-        'Search Parameters': ['search_target', 'detection_behavior']
-    },
-    'survey': {
-        'GPS Coordinates': ['latitude', 'longitude', 'mgrs'],
-        'Relative Positioning': ['distance', 'heading', 'distance_units', 'relative_reference_frame'],
-        'Survey Area': ['radius', 'radius_units'],
-        'Corner Points': ['corner1_lat', 'corner1_lon', 'corner1_mgrs', 'corner2_lat', 'corner2_lon', 'corner2_mgrs', 'corner3_lat', 'corner3_lon', 'corner3_mgrs', 'corner4_lat', 'corner4_lon', 'corner4_mgrs'],
-        'Altitude Parameters': ['altitude', 'altitude_units'],
-        'Search Parameters': ['search_target', 'detection_behavior']
-    }
-}
+# Shared utility functions for tools
+
+def unpack_measurement(value: Any, default_units: str = 'meters') -> Tuple[Optional[float], str]:
+    """
+    Unpack a measurement value that may be a tuple (value, units) or a scalar.
+
+    Args:
+        value: Either (value, units) tuple from validator, or scalar value
+        default_units: Units to use if value is not a tuple
+
+    Returns:
+        Tuple of (value, units)
+    """
+    if isinstance(value, tuple):
+        return value
+    return (value, default_units)
+
+
+def unpack_coordinates(value: Any) -> Tuple[Optional[float], Optional[float]]:
+    """
+    Unpack coordinates that may be a tuple (lat, lon) or None.
+
+    Args:
+        value: Either (lat, lon) tuple from validator, or None
+
+    Returns:
+        Tuple of (latitude, longitude)
+    """
+    if isinstance(value, tuple):
+        return value
+    return (None, None)
+
+
+# Reusable field validators for Pydantic models
+
+def validate_distance(v):
+    """Validator for distance fields - parses string values with units"""
+    if v is None:
+        return None
+    parsed_value, units = parse_distance(v)
+    if parsed_value is None:
+        return v  # Let Pydantic handle validation error
+    return (parsed_value, units)
+
+
+def validate_altitude(v):
+    """Validator for altitude fields - parses string values with units"""
+    if v is None:
+        return None
+    parsed_value, units = parse_altitude(v)
+    if parsed_value is None:
+        return v  # Let Pydantic handle validation error
+    return (parsed_value, units)
+
+
+def validate_radius(v):
+    """Validator for radius fields - parses string values with units"""
+    if v is None:
+        return None
+    parsed_value, units = parse_radius(v)
+    if parsed_value is None:
+        return v  # Let Pydantic handle validation error
+    return (parsed_value, units)
+
+
+def validate_coordinates(v):
+    """Validator for coordinates fields - parses string values"""
+    if v is None:
+        return None
+    lat, lon = parse_coordinates(v)
+    if lat is None or lon is None:
+        return v  # Let Pydantic handle validation error
+    return (lat, lon)
+
 
 # Base class for all mission item tools
 class MAVLinkToolBase(BaseTool):
@@ -106,37 +146,7 @@ class MAVLinkToolBase(BaseTool):
         if mission:
             mission.items.clear()
             mission.items.extend(saved_state)
-    
-    def _get_detailed_parameter_display(self, item) -> str:
-        """Show ALL model-available parameters for this mission item"""
-        COMMAND_EMOJIS = {
-            'takeoff': "🚀",
-            'waypoint': "📍", 
-            'loiter': "🔄",
-            'rtl': "🏠",
-            'survey': "🗺️"
-        }
-        UNSPECIFIED_MARKER = "unspecified"
-        
-        command_type = getattr(item, 'command_type', 'unknown')
-        command_name = self._get_command_name(command_type)
-        schema = MODEL_PARAMETER_SCHEMAS.get(command_type, {})
-        
-        emoji = COMMAND_EMOJIS.get(command_type, '❓')
-        display = f"{emoji} {command_name.upper()} (Item {item.seq + 1})\n"
-        
-        # Show all available parameters from schema
-        for category, params in schema.items():
-            display += f"\n[{category}]\n"
-            for param in params:
-                value = getattr(item, param, None)
-                if value is None:
-                    display += f"    {param}: {UNSPECIFIED_MARKER}\n"
-                else:
-                    display += f"    {param}: {value}\n"
-        
-        return display
-    
+
     def _get_mission_state_summary(self) -> str:
         """Get brief summary of current mission state - now delegates to mission manager"""
         return self.mission_manager.get_mission_state_summary()
@@ -155,15 +165,13 @@ class MAVLinkToolBase(BaseTool):
             return "coordinates not specified"
 
 def get_command_tools(mission_manager: MissionManager) -> list:
-    """Get MAVLink tools for command mode - add tools + update only"""
+    """Get MAVLink tools for command mode - add tools only"""
     from .add_waypoint_tool import AddWaypointTool
     from .add_takeoff_tool import AddTakeoffTool
     from .add_rtl_tool import AddRTLTool
     from .add_loiter_tool import AddLoiterTool
     from .add_survey_tool import AddSurveyTool
-    from .update_mission_item_tool import UpdateMissionItemTool
-    from .move_item_tool import MoveItemTool
-    
+
     return [
         AddWaypointTool(mission_manager),
         AddTakeoffTool(mission_manager),
@@ -202,7 +210,3 @@ def get_tools_for_mode(mission_manager: MissionManager, mode: str) -> list:
         return get_command_tools(mission_manager)
     else:
         return get_mission_tools(mission_manager)
-
-def get_mavlink_tools(mission_manager: MissionManager) -> list:
-    """Get all MAVLink mission planning tools (legacy function - defaults to mission mode)"""
-    return get_mission_tools(mission_manager)

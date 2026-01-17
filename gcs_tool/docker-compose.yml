@@ -1,0 +1,11 @@
+services:
+  gcs-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: mav-agent:gcs
+    container_name: mav-agent-gcs
+    network_mode: host
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
