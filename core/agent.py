@@ -216,10 +216,7 @@ class MAVLinkAgent:
         # Always clear chat history and create fresh mission for command mode
         self.chat_history = []
         self.mission_manager.create_mission()
-        
-        # Initialize current action from settings
-        self.mission_manager.initialize_current_action_from_settings()
-        
+
         system_prompt = get_system_prompt("command")
         
         try:
@@ -342,4 +339,124 @@ class MAVLinkAgent:
             "created_at": mission.created_at.isoformat(),
             "modified_at": mission.modified_at.isoformat()
         }
-    
+
+    def plan(self,
+             user_input: str,
+             mode: str = "mission",
+             mission_state: Optional[Dict] = None,
+             home_position: Optional[Dict] = None) -> Dict[str, Any]:
+        """
+        Unified stateless planning endpoint.
+
+        Args:
+            user_input: Natural language command
+            mode: 'mission' or 'command'
+            mission_state: Current mission or action state (optional)
+            home_position: Dict with 'latitude', 'longitude' from GCS (optional but recommended)
+
+        Returns:
+            {
+                "success": bool,
+                "mode": str,
+                "output": str,
+                "mission_items": List[Dict],      # Full mission
+                "added_items": List[Dict],         # What was new
+                "modified_items": List[Dict],      # What changed
+                "deleted_items": List[Dict],       # What was removed
+                "validation": {
+                    "valid": bool,
+                    "errors": List[str],
+                    "warnings": List[str]
+                }
+            }
+        """
+        from core.mission import Mission
+
+        # Save current state
+        original_mission = self.mission_manager.get_mission() if self.mission_manager else None
+        original_history = self.chat_history.copy()
+        original_mode = self.current_mode
+
+        try:
+            # Load request context
+            if mission_state:
+                loaded_mission = Mission.from_dict(mission_state)
+                self.mission_manager.current_mission = loaded_mission
+
+            # Route to appropriate mode handler
+            if mode == "mission":
+                result = self.mission_mode(user_input)
+            elif mode == "command":
+                result = self.command_mode(user_input)
+            else:
+                raise ValueError(f"Invalid mode: {mode}")
+
+            # Enhance response with delta information (pass home_position for validation)
+            enhanced_result = self._enhance_with_deltas(
+                result,
+                original_mission,
+                self.mission_manager.get_mission(),
+                home_position
+            )
+
+            return enhanced_result
+
+        finally:
+            # Always restore original state
+            self.mission_manager.current_mission = original_mission
+            self.chat_history = original_history
+            self.current_mode = original_mode
+
+    def _enhance_with_deltas(self, result: Dict,
+                            old_mission,
+                            new_mission,
+                            home_position: Optional[Dict] = None) -> Dict:
+        """Calculate what changed in the mission
+
+        Args:
+            result: Original result from mission_mode or command_mode
+            old_mission: Mission state before operation
+            new_mission: Mission state after operation
+            home_position: Dict with 'latitude', 'longitude' from GCS (optional)
+
+        Returns:
+            Enhanced result with delta information
+        """
+        old_items = old_mission.items if old_mission else []
+        new_items = new_mission.items if new_mission else []
+
+        # Simple seq-based diff
+        old_seqs = {item.seq: item for item in old_items}
+        new_seqs = {item.seq: item for item in new_items}
+
+        added = [item.to_dict() for seq, item in new_seqs.items()
+                 if seq not in old_seqs]
+        deleted = [item.to_dict() for seq, item in old_seqs.items()
+                   if seq not in new_seqs]
+        modified = [item.to_dict() for seq, item in new_seqs.items()
+                    if seq in old_seqs and item.to_dict() != old_seqs[seq].to_dict()]
+
+        # Add mission_items array to result
+        result['mission_items'] = [item.to_dict() for item in new_items]
+        result['added_items'] = added
+        result['modified_items'] = modified
+        result['deleted_items'] = deleted
+
+        # Add validation information (pass home_position for coordinate conversion)
+        if new_mission:
+            valid, errors = self.mission_manager.validate_mission(home_position=home_position)
+            result['validation'] = {
+                'valid': valid,
+                'errors': errors if errors else [],
+                'warnings': []  # Can be populated with non-critical issues
+            }
+        else:
+            result['validation'] = {
+                'valid': True,
+                'errors': [],
+                'warnings': []
+            }
+
+        return result
+
+

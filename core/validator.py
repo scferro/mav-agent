@@ -3,7 +3,7 @@ MAVLink Mission Validation
 Handles mission validation logic and safety checks
 """
 
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Dict
 from config.settings import MAVLinkAgentSettings
 from core.mission import Mission, MissionItem
 from core.units import convert_units
@@ -15,45 +15,53 @@ class MissionValidator:
     def __init__(self, settings: MAVLinkAgentSettings):
         self.settings = settings
     
-    def validate_mission(self, mission: Mission, mode: str) -> Tuple[bool, List[str], List[str]]:
-        """Validate mission for safety and completeness"""
+    def validate_mission(self, mission: Mission, mode: str,
+                        home_position: Optional[Dict] = None) -> Tuple[bool, List[str], List[str]]:
+        """Validate mission for safety and completeness
+
+        Args:
+            mission: Mission to validate
+            mode: 'mission' or 'command'
+            home_position: Dict with 'latitude', 'longitude' from GCS (optional but recommended)
+        """
         errors = []
         fixes_applied = []
-        
+
         if len(mission.items) == 0:
             errors.append("Mission has no items")
             return False, errors, fixes_applied
-        
+
         if len(mission.items) > self.settings.agent.max_mission_items:
             errors.append(f"Mission exceeds maximum {self.settings.agent.max_mission_items} items")
-        
+
         # Different validation rules based on mode
         if mode == "mission":
             # Validate mission mode rules (with auto-fix integration)
             mode_errors, mode_fixes = self._validate_mission_mode_rules(mission)
             errors.extend(mode_errors)
             fixes_applied.extend(mode_fixes)
-            
-        elif mode == "command":            
+
+        elif mode == "command":
             # Ensure the "mission" length is 1 or less
             mission_item_count = len(mission.items)
             if mission_item_count > 1:
                 errors.append(f"Mission has {mission_item_count} commands - only one is allowed")
-        
+
         # Complete missing parameters (applies to both mission and command modes)
         if self.settings.agent.auto_complete_parameters:
             param_fixes = self._complete_missing_parameters(mission)
             fixes_applied.extend(param_fixes)
-        
+
         # Validate individual items (applies to both modes)
         for i, item in enumerate(mission.items):
             item_errors = self.validate_mission_item(item, i)
             errors.extend(item_errors)
-        
+
         # Convert all relative positioning to absolute coordinates and clear relative attributes
-        coord_fixes = self._convert_relative_to_absolute_coordinates(mission)
+        # Only if home_position is provided
+        coord_fixes = self._convert_relative_to_absolute_coordinates(mission, home_position)
         fixes_applied.extend(coord_fixes)
-        
+
         return len(errors) == 0, errors, fixes_applied
     
     def validate_mission_item(self, item: MissionItem, index: int) -> List[str]:
@@ -457,21 +465,29 @@ class MissionValidator:
         for i, item in enumerate(mission.items):
             item.seq = i
     
-    def _convert_relative_to_absolute_coordinates(self, mission: Mission) -> List[str]:
-        """Convert all relative positioning to absolute coordinates and clear relative attributes"""
+    def _convert_relative_to_absolute_coordinates(self, mission: Mission,
+                                                 home_position: Optional[Dict] = None) -> List[str]:
+        """Convert all relative positioning to absolute coordinates and clear relative attributes
+
+        Args:
+            mission: Mission to convert
+            home_position: Dict with 'latitude' and 'longitude' from GCS (required for conversion)
+        """
         fixes_applied = []
-        
-        # Get origin coordinates for conversion
-        try:
-            from config.settings import get_current_takeoff_settings
-            from core.units import calculate_absolute_coordinates
-            takeoff_settings = get_current_takeoff_settings()
-            origin_lat = takeoff_settings['latitude'] 
-            origin_lon = takeoff_settings['longitude']
-        except Exception:
-            # If we can't get takeoff settings, we can't convert
+
+        # Require home position to be explicitly provided
+        if not home_position:
+            # Cannot convert without origin - skip conversion
             return fixes_applied
-        
+
+        try:
+            from core.units import calculate_absolute_coordinates
+            origin_lat = home_position['latitude']
+            origin_lon = home_position['longitude']
+        except (KeyError, TypeError):
+            # Invalid home_position format - skip conversion
+            return fixes_applied
+
         last_lat, last_lon = origin_lat, origin_lon
         
         for item in mission.items:

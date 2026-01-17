@@ -214,16 +214,24 @@ class MissionManager:
         return self.insert_item_at(item, insert_at)
     
     
-    def validate_mission(self) -> Tuple[bool, List[str]]:
-        """Validate mission for safety and completeness"""
+    def validate_mission(self, home_position: Optional[Dict] = None) -> Tuple[bool, List[str]]:
+        """Validate mission for safety and completeness
+
+        Args:
+            home_position: Dict with 'latitude', 'longitude' from GCS (optional but recommended)
+        """
         mission = self._get_current_mission_or_raise()
-        is_valid, errors, fixes_applied = self.validator.validate_mission(mission, self.mode)
-        
+        is_valid, errors, fixes_applied = self.validator.validate_mission(
+            mission,
+            self.mode,
+            home_position=home_position
+        )
+
         # Combine errors and fixes for reporting
         all_messages = errors.copy()
         if fixes_applied:
             all_messages.extend([f"Auto-fix: {fix}" for fix in fixes_applied])
-        
+
         return is_valid, all_messages
     
     def _get_current_mission_or_raise(self) -> Mission:
@@ -365,34 +373,3 @@ class MissionManager:
         }
         
         return "\n\n" + json.dumps(current_action_state, indent=2)
-    
-    def initialize_current_action_from_settings(self) -> None:
-        """Initialize current action from configuration settings"""
-        from config import get_current_action_settings
-        from core.mission import MissionItem
-        
-        settings = get_current_action_settings()
-        
-        # Create MissionItem from settings (seq=0 for current action)
-        kwargs = {
-            'seq': 0,  # Current action doesn't need sequence number
-            'command_type': settings['type'],
-            'latitude': settings['latitude'],
-            'longitude': settings['longitude'],
-            'altitude': settings['altitude'],
-            'altitude_units': settings['altitude_units'],
-            'radius': settings['radius'],
-            'radius_units': settings['radius_units']
-        }
-        
-        # Only add optional fields if they're not empty
-        if settings['heading']:
-            kwargs['heading'] = settings['heading']
-        if settings['search_target']:
-            kwargs['search_target'] = settings['search_target']
-        if settings['detection_behavior']:
-            kwargs['detection_behavior'] = settings['detection_behavior']
-        
-        action = MissionItem(**kwargs)
-        
-        self.set_current_action(action)

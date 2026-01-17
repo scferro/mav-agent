@@ -13,21 +13,6 @@
     "auto_validate": true,
     "verbose_default": false,
 
-    "takeoff_initial_latitude": 41.8832,
-    "takeoff_initial_longitude": -87.6324,
-    "takeoff_default_heading": "north",
-    
-    "current_action_type": "loiter",
-    "current_action_latitude": 41.8832,
-    "current_action_longitude": -87.6324,
-    "current_action_altitude": 400.0,
-    "current_action_altitude_units": "feet",
-    "current_action_radius": 500.0,
-    "current_action_radius_units": "feet",
-    "current_action_heading": "",
-    "current_action_search_target": "",
-    "current_action_detection_behavior": "tag_and_continue",
-    
     "single_takeoff_only": true,
     "single_rtl_only": true,
     "takeoff_must_be_first": true,

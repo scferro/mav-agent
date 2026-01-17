@@ -123,17 +123,27 @@ class MoveItemTool(MAVLinkToolBase):
                 if supports_position:
                     # All positioning (including 'self' reference) converts to absolute coordinates
                     from core.units import calculate_absolute_coordinates
-                    from config.settings import get_current_takeoff_settings
-                    
+
                     try:
+                        # Helper to find takeoff/origin coordinates from mission
+                        def get_origin_coordinates():
+                            mission = self.mission_manager.get_mission()
+                            if mission and mission.items:
+                                # Find first takeoff item
+                                for mi in mission.items:
+                                    if mi.command_type == 'takeoff' and mi.latitude is not None and mi.longitude is not None:
+                                        return mi.latitude, mi.longitude
+                            return None, None
+
                         # Determine reference point
                         if relative_reference_frame == 'self':
                             # Use current item coordinates as reference (items now always have absolute coords)
                             ref_lat, ref_lon = item.latitude, item.longitude
                         elif relative_reference_frame == 'origin':
-                            # Use takeoff origin
-                            takeoff_settings = get_current_takeoff_settings()
-                            ref_lat, ref_lon = takeoff_settings['latitude'], takeoff_settings['longitude']
+                            # Use takeoff origin from mission
+                            ref_lat, ref_lon = get_origin_coordinates()
+                            if ref_lat is None or ref_lon is None:
+                                return "Error: Cannot use 'origin' reference - no takeoff item with coordinates found in mission."
                         elif relative_reference_frame == 'last_waypoint':
                             # Find last waypoint coordinates
                             mission = self.mission_manager.get_mission()
@@ -142,12 +152,14 @@ class MoveItemTool(MAVLinkToolBase):
                                 ref_lat, ref_lon = last_coords
                             else:
                                 # Fall back to origin if no last waypoint found
-                                takeoff_settings = get_current_takeoff_settings()
-                                ref_lat, ref_lon = takeoff_settings['latitude'], takeoff_settings['longitude']
+                                ref_lat, ref_lon = get_origin_coordinates()
+                                if ref_lat is None or ref_lon is None:
+                                    return "Error: Cannot find reference point - no last waypoint and no takeoff item with coordinates found."
                         else:
                             # Default to origin
-                            takeoff_settings = get_current_takeoff_settings()
-                            ref_lat, ref_lon = takeoff_settings['latitude'], takeoff_settings['longitude']
+                            ref_lat, ref_lon = get_origin_coordinates()
+                            if ref_lat is None or ref_lon is None:
+                                return "Error: Cannot determine origin - no takeoff item with coordinates found in mission."
                         
                         # Convert relative positioning to new absolute coordinates
                         new_lat, new_lon = calculate_absolute_coordinates(
