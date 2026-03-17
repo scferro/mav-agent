@@ -33,6 +33,7 @@ class MAVLinkConnection:
 
         self.running = False
         self.thread = None
+        self.heartbeat_thread = None
 
     def connect(self):
         """Connect to MAVLink"""
@@ -49,10 +50,32 @@ class MAVLinkConnection:
             return False
 
     def start_telemetry_loop(self):
-        """Start background thread to receive MAVLink messages"""
+        """Start background threads for telemetry and heartbeat"""
         self.running = True
         self.thread = threading.Thread(target=self._telemetry_loop, daemon=True)
         self.thread.start()
+        self.heartbeat_thread = threading.Thread(target=self._heartbeat_loop, daemon=True)
+        self.heartbeat_thread.start()
+
+    def _heartbeat_loop(self):
+        """Send GCS heartbeat to PX4 every 1 second"""
+        import time
+        while self.running:
+            if not self.mav:
+                break
+            try:
+                with self.lock:
+                    self.mav.mav.heartbeat_send(
+                        mavutil.mavlink.MAV_TYPE_GCS,
+                        mavutil.mavlink.MAV_AUTOPILOT_INVALID,
+                        0,  # base_mode
+                        0,  # custom_mode
+                        mavutil.mavlink.MAV_STATE_ACTIVE,
+                    )
+            except Exception as e:
+                print(f"Error sending heartbeat: {e}")
+                break
+            time.sleep(1)
 
     def _telemetry_loop(self):
         """Background loop to process MAVLink messages"""
@@ -116,10 +139,12 @@ class MAVLinkConnection:
             self.socketio.emit('telemetry', telemetry, namespace='/ws/telemetry')
 
     def stop(self):
-        """Stop telemetry loop"""
+        """Stop telemetry and heartbeat loops"""
         self.running = False
         if self.thread:
             self.thread.join(timeout=2)
+        if self.heartbeat_thread:
+            self.heartbeat_thread.join(timeout=2)
 
 
 class GCSServer:
