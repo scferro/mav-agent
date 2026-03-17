@@ -151,3 +151,12 @@ class Mission:
         from core.mavlink_format import mission_from_mavlink
         return mission_from_mavlink(mav_items)
 
+    def clear_items(self):
+        """Remove all mission items"""
+        self.items.clear()
+
+    def add_item(self, item: 'MissionItem'):
+        """Add a mission item and update modified timestamp"""
+        self.items.append(item)
+        self.modified_at = datetime.now()
+

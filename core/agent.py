@@ -425,22 +425,27 @@ class MAVLinkAgent:
         old_items = old_mission.items if old_mission else []
         new_items = new_mission.items if new_mission else []
 
-        # Simple seq-based diff
-        old_seqs = {item.seq: item for item in old_items}
-        new_seqs = {item.seq: item for item in new_items}
+        mode = result.get('mode', 'mission')
 
-        added = [item.to_dict() for seq, item in new_seqs.items()
-                 if seq not in old_seqs]
-        deleted = [item.to_dict() for seq, item in old_seqs.items()
-                   if seq not in new_seqs]
-        modified = [item.to_dict() for seq, item in new_seqs.items()
-                    if seq in old_seqs and item.to_dict() != old_seqs[seq].to_dict()]
+        if mode == 'command':
+            # Command mode: just attach the single item, no deltas
+            result['mission_items'] = [item.to_dict() for item in new_items]
+        else:
+            # Mission mode: compute deltas
+            old_seqs = {item.seq: item for item in old_items}
+            new_seqs = {item.seq: item for item in new_items}
 
-        # Add mission_items array to result
-        result['mission_items'] = [item.to_dict() for item in new_items]
-        result['added_items'] = added
-        result['modified_items'] = modified
-        result['deleted_items'] = deleted
+            added = [item.to_dict() for seq, item in new_seqs.items()
+                     if seq not in old_seqs]
+            deleted = [item.to_dict() for seq, item in old_seqs.items()
+                       if seq not in new_seqs]
+            modified = [item.to_dict() for seq, item in new_seqs.items()
+                        if seq in old_seqs and item.to_dict() != old_seqs[seq].to_dict()]
+
+            result['mission_items'] = [item.to_dict() for item in new_items]
+            result['added_items'] = added
+            result['modified_items'] = modified
+            result['deleted_items'] = deleted
 
         # Add validation information (pass home_position for coordinate conversion)
         if new_mission:

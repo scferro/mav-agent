@@ -1,7 +1,7 @@
 {
   "model": {
     "type": "ollama",
-    "name": "qwen3:4b-instruct",
+    "name": "ministral-3:3b",
     "base_url": "http://localhost:11434",
     "temperature": 0.4,
     "top_p": 0.6,

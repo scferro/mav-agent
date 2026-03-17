@@ -148,13 +148,20 @@ class MAVLinkAgentServer:
                     home_position=home_position
                 )
 
-                # Convert result mission to MAVLink format ONLY (no custom format)
+                # Convert result mission to MAVLink format
                 if result.get('success') and result.get('mission_state'):
                     from core.mission import Mission
+                    from core.mavlink_format import to_command_int
+
                     mission = Mission.from_dict(result['mission_state'])
 
-                    # Replace mission_state with mission_items (MAVLink format)
-                    result['mission_items'] = mission.to_mavlink()
+                    if mode == 'command' and len(mission.items) == 1:
+                        # Command mode: return a single COMMAND_INT
+                        result['command'] = to_command_int(mission.items[0])
+                    else:
+                        # Mission mode: return list of MISSION_ITEM_INT dicts
+                        result['mission_items'] = mission.to_mavlink()
+
                     del result['mission_state']  # Remove old format
 
                 # Clean for JSON serialization

@@ -34,20 +34,19 @@ COMMAND_TYPE_TO_MAVLINK = {
 MAVLINK_TO_COMMAND_TYPE = {v: k for k, v in COMMAND_TYPE_TO_MAVLINK.items()}
 
 
-def mission_item_to_mavlink(item: 'MissionItem') -> Dict[str, Any]:
-    """Convert internal MissionItem to MAVLink MISSION_ITEM_INT format
+def item_to_mavlink_dict(item: 'MissionItem') -> Dict[str, Any]:
+    """Convert internal MissionItem to common MAVLink fields.
+
+    This is the shared conversion used by both COMMAND_INT and MISSION_ITEM_INT.
 
     Args:
         item: Internal MissionItem with command_type, lat/lon, altitude, etc.
 
     Returns:
-        Dict matching MAVLink MISSION_ITEM_INT format:
+        Dict with common MAVLink fields:
         {
-            'seq': int,
             'frame': int,
             'command': int,
-            'current': int,
-            'autocontinue': int,
             'param1': float,
             'param2': float,
             'param3': float,
@@ -77,10 +76,8 @@ def mission_item_to_mavlink(item: 'MissionItem') -> Dict[str, Any]:
 
     if item.command_type == 'takeoff':
         param1 = 0.0  # Min pitch
-        # Convert heading text to yaw angle if needed
         heading_value = item.heading or 0
         if isinstance(heading_value, str):
-            # Try to convert text heading to degrees (handled by tools, but fallback to 0)
             param4 = 0.0
         else:
             param4 = float(heading_value)
@@ -93,7 +90,6 @@ def mission_item_to_mavlink(item: 'MissionItem') -> Dict[str, Any]:
         param1 = 0.0  # Hold time
         param2 = 2.0  # Acceptance radius (meters)
         param3 = 0.0  # Pass through
-        # Convert heading text to yaw angle if needed
         heading_value = item.heading or 0
         if isinstance(heading_value, str):
             param4 = 0.0
@@ -101,11 +97,8 @@ def mission_item_to_mavlink(item: 'MissionItem') -> Dict[str, Any]:
             param4 = float(heading_value)
 
     return {
-        'seq': item.seq,
         'frame': frame,
         'command': command,
-        'current': item.current,
-        'autocontinue': 1,
         'param1': param1,
         'param2': param2,
         'param3': param3,
@@ -114,6 +107,42 @@ def mission_item_to_mavlink(item: 'MissionItem') -> Dict[str, Any]:
         'y': y,
         'z': z
     }
+
+
+def to_command_int(item: 'MissionItem', target_system: int = 1, target_component: int = 1) -> Dict[str, Any]:
+    """Convert a MissionItem to a COMMAND_INT dict for sending a single command.
+
+    Args:
+        item: Internal MissionItem
+        target_system: MAVLink target system ID
+        target_component: MAVLink target component ID
+
+    Returns:
+        Dict with COMMAND_INT fields
+    """
+    base = item_to_mavlink_dict(item)
+    base['target_system'] = target_system
+    base['target_component'] = target_component
+    base['current'] = 0
+    base['autocontinue'] = 0
+    return base
+
+
+def to_mission_item_int(item: 'MissionItem', seq: int = None) -> Dict[str, Any]:
+    """Convert a MissionItem to a MISSION_ITEM_INT dict for mission upload.
+
+    Args:
+        item: Internal MissionItem
+        seq: Sequence number override (uses item.seq if None)
+
+    Returns:
+        Dict with MISSION_ITEM_INT fields
+    """
+    base = item_to_mavlink_dict(item)
+    base['seq'] = seq if seq is not None else item.seq
+    base['current'] = item.current
+    base['autocontinue'] = 1
+    return base
 
 
 def mission_item_from_mavlink(mav_item: Dict[str, Any]) -> 'MissionItem':
@@ -165,7 +194,7 @@ def mission_item_from_mavlink(mav_item: Dict[str, Any]) -> 'MissionItem':
 
 def mission_to_mavlink(mission: 'Mission') -> List[Dict[str, Any]]:
     """Convert Mission to list of MAVLink MISSION_ITEM_INT dicts"""
-    return [mission_item_to_mavlink(item) for item in mission.items]
+    return [to_mission_item_int(item, seq=i) for i, item in enumerate(mission.items)]
 
 
 def mission_from_mavlink(mav_items: List[Dict[str, Any]]) -> 'Mission':

@@ -11,9 +11,18 @@
         <header class="header">
             <div class="header-content">
                 <h1>🚁 MAVLink Agent</h1>
-                <div class="connection-status" id="connectionStatus">
-                    <span class="status-dot" id="statusDot"></span>
-                    <span id="statusText">Connecting...</span>
+                <div class="status-indicators" id="statusIndicators">
+                    <div class="status-indicator">
+                        <span class="status-label">Server</span>
+                        <span class="status-dot" id="statusDot"></span>
+                        <span class="status-value" id="statusText">Connecting...</span>
+                    </div>
+                    <div class="status-indicator">
+                        <span class="status-label">MAVLink</span>
+                        <span class="status-dot" id="mavlinkDot"></span>
+                        <span class="status-value" id="mavlinkText">Disconnected</span>
+                    </div>
+                    <button id="btnReconnect" class="header-reconnect-btn">Reconnect</button>
                 </div>
             </div>
         </header>
@@ -21,21 +30,6 @@
         <div class="main-content">
             <!-- Telemetry Panel -->
             <div class="telemetry-panel" id="telemetryPanel">
-                <div class="telemetry-header">
-                    <h3>🚁 MAVLink GCS</h3>
-                    <span class="telemetry-status-large" id="telemetryStatus">🔴 Disconnected</span>
-                </div>
-                <div class="connection-help" id="connectionHelp">
-                    <p><strong>To connect MAVLink:</strong></p>
-                    <ol>
-                        <li>Start SITL simulation:<br><code>sim_vehicle.py -v ArduCopter --console --map</code></li>
-                        <li>Start LLM Server:<br><code>python server.py</code></li>
-                        <li>Start GCS Server (connects automatically to SITL):<br><code>python gcs_server.py</code></li>
-                        <li>Telemetry will appear below when connected</li>
-                    </ol>
-                    <p>Or start GCS server with custom MAVLink connection:</p>
-                    <code>python gcs_server.py --mavlink=udpin:0.0.0.0:14550</code>
-                </div>
                 <div class="telemetry-grid">
                     <div class="telemetry-item">
                         <label>Home:</label>
@@ -58,10 +52,6 @@
                         <span id="telemArmed">--</span>
                     </div>
                 </div>
-                <div class="telemetry-actions">
-                    <button id="btnDownloadMission" class="telemetry-btn" disabled>Download Mission</button>
-                    <button id="btnUploadMission" class="telemetry-btn" disabled>Upload Mission</button>
-                </div>
             </div>
 
             <div class="mode-selector">
@@ -82,18 +72,6 @@
                 </div>
             </div>
 
-            <!-- GCS Connection Banner -->
-            <div class="connection-banner" id="connectionBanner" style="display: none;">
-                <div class="banner-content">
-                    <span class="banner-icon">⚠️</span>
-                    <div class="banner-message">
-                        <strong>GCS Connection Required</strong>
-                        <p>Connect to MAVLink GCS to enable mission planning. The system needs home position and telemetry data.</p>
-                    </div>
-                    <button id="retryConnectionBtn" class="banner-btn">Retry Connection</button>
-                </div>
-            </div>
-
             <div class="chat-container">
                 <div class="chat-messages" id="chatMessages">
                     <div class="welcome-message">
@@ -107,10 +85,11 @@
                 </div>
 
                 <div class="mission-state" id="missionState">
-                    <h3>📋 Current Mission</h3>
+                    <h3>Current Mission</h3>
                     <div class="mission-items" id="missionItems">
                         <div class="empty-mission">No mission items yet</div>
                     </div>
+                    <button id="btnSendToDrone" class="send-drone-btn" disabled>Send to Drone</button>
                 </div>
 
                 <div class="input-container">

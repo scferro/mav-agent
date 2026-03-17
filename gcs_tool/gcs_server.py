@@ -22,6 +22,7 @@ class MAVLinkConnection:
         self.socketio = socketio
         self.mav = None
         self.connected = False
+        self.lock = threading.Lock()
 
         # Telemetry state
         self.home_position = None
@@ -60,7 +61,8 @@ class MAVLinkConnection:
                 break
 
             try:
-                msg = self.mav.recv_match(blocking=True, timeout=1.0)
+                with self.lock:
+                    msg = self.mav.recv_match(blocking=True, timeout=1.0)
                 if msg:
                     self._handle_message(msg)
             except Exception as e:
@@ -214,6 +216,148 @@ class GCSServer:
                     "success": False,
                     "error": str(e)
                 }), 500
+
+        @self.app.route('/api/send-command', methods=['POST'])
+        def send_command():
+            """Send a COMMAND_INT to the vehicle"""
+            if not self.mavlink or not self.mavlink.connected:
+                return jsonify({"success": False, "error": "MAVLink not connected"}), 503
+
+            try:
+                data = request.get_json()
+                cmd = data.get('command_data')
+                if not cmd:
+                    return jsonify({"success": False, "error": "Missing command_data"}), 400
+
+                mav = self.mavlink.mav
+                with self.mavlink.lock:
+                    mav.mav.command_int_send(
+                        cmd.get('target_system', 1),
+                        cmd.get('target_component', 1),
+                        cmd.get('frame', 6),
+                        cmd.get('command', 16),
+                        cmd.get('current', 0),
+                        cmd.get('autocontinue', 0),
+                        cmd.get('param1', 0),
+                        cmd.get('param2', 0),
+                        cmd.get('param3', 0),
+                        cmd.get('param4', 0),
+                        cmd.get('x', 0),
+                        cmd.get('y', 0),
+                        cmd.get('z', 0),
+                    )
+
+                    # Wait for COMMAND_ACK
+                    ack = mav.recv_match(type='COMMAND_ACK', blocking=True, timeout=5)
+
+                if ack:
+                    result_code = ack.result
+                    accepted = result_code == 0  # MAV_RESULT_ACCEPTED
+                    return jsonify({
+                        "success": accepted,
+                        "result": result_code,
+                        "message": "Command accepted" if accepted else f"Command rejected (result={result_code})"
+                    })
+                else:
+                    return jsonify({
+                        "success": False,
+                        "error": "No COMMAND_ACK received (timeout)"
+                    }), 504
+
+            except Exception as e:
+                return jsonify({"success": False, "error": str(e)}), 500
+
+        @self.app.route('/api/upload-mission', methods=['POST'])
+        def upload_mission():
+            """Upload a mission via the MAVLink mission protocol"""
+            if not self.mavlink or not self.mavlink.connected:
+                return jsonify({"success": False, "error": "MAVLink not connected"}), 503
+
+            try:
+                data = request.get_json()
+                items = data.get('mission_items')
+                if not items or not isinstance(items, list):
+                    return jsonify({"success": False, "error": "Missing or invalid mission_items"}), 400
+
+                mav = self.mavlink.mav
+                target_system = 1
+                target_component = 1
+                count = len(items)
+
+                with self.mavlink.lock:
+                    # Send MISSION_COUNT
+                    mav.mav.mission_count_send(target_system, target_component, count)
+
+                    # Upload loop: wait for MISSION_REQUEST_INT, respond with MISSION_ITEM_INT
+                    for _ in range(count):
+                        req = mav.recv_match(
+                            type=['MISSION_REQUEST_INT', 'MISSION_REQUEST'],
+                            blocking=True, timeout=5
+                        )
+                        if not req:
+                            return jsonify({
+                                "success": False,
+                                "error": "Timeout waiting for MISSION_REQUEST_INT"
+                            }), 504
+
+                        seq = req.seq
+                        if seq < 0 or seq >= count:
+                            return jsonify({
+                                "success": False,
+                                "error": f"Invalid sequence requested: {seq}"
+                            }), 500
+
+                        item = items[seq]
+                        mav.mav.mission_item_int_send(
+                            target_system,
+                            target_component,
+                            item.get('seq', seq),
+                            item.get('frame', 6),
+                            item.get('command', 16),
+                            item.get('current', 0),
+                            item.get('autocontinue', 1),
+                            item.get('param1', 0),
+                            item.get('param2', 0),
+                            item.get('param3', 0),
+                            item.get('param4', 0),
+                            item.get('x', 0),
+                            item.get('y', 0),
+                            item.get('z', 0),
+                        )
+
+                    # Wait for MISSION_ACK
+                    ack = mav.recv_match(type='MISSION_ACK', blocking=True, timeout=5)
+
+                if ack:
+                    accepted = ack.type == 0  # MAV_MISSION_ACCEPTED
+                    return jsonify({
+                        "success": accepted,
+                        "result": ack.type,
+                        "message": "Mission accepted" if accepted else f"Mission rejected (type={ack.type})"
+                    })
+                else:
+                    return jsonify({
+                        "success": False,
+                        "error": "No MISSION_ACK received (timeout)"
+                    }), 504
+
+            except Exception as e:
+                return jsonify({"success": False, "error": str(e)}), 500
+
+        @self.app.route('/api/reconnect', methods=['POST'])
+        def reconnect():
+            """Reconnect to MAVLink"""
+            if not self.mavlink:
+                return jsonify({"success": False, "error": "No MAVLink configuration"}), 400
+
+            try:
+                self.mavlink.stop()
+                success = self.mavlink.connect()
+                if success:
+                    self.mavlink.start_telemetry_loop()
+                return jsonify({"success": success})
+            except Exception as e:
+                return jsonify({"success": False, "error": str(e)}), 500
 
     def run(self, host='0.0.0.0', port=8080):
         print(f"🌐 Starting GCS Server on http://{host}:{port}")
