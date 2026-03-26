@@ -1,6 +1,6 @@
 """
-GCS Server - Ground Control Station with MAVLink integration
-Calls LLM Server for AI-powered mission planning
+MAVLink connection management for the agent server.
+Extracted from gcs_tool/gcs_server.py — no WebSocket broadcast (agent has no UI clients).
 """
 
 import os
@@ -10,13 +10,8 @@ os.environ['MAVLINK20'] = '1'
 import time
 import threading
 import queue
-import requests
-from flask import Flask, request, jsonify, send_from_directory, send_file
-from flask_cors import CORS
-from flask_socketio import SocketIO, emit
 from pymavlink import mavutil
-from typing import Dict, Any, Optional, List
-import logging
+from typing import Dict, Any, List
 
 
 # Vehicle type sets (MAV_TYPE values)
@@ -40,11 +35,10 @@ def _vehicle_class(vehicle_type):
 
 
 class MAVLinkConnection:
-    """Manages MAVLink connection and telemetry state"""
+    """Manages MAVLink connection and telemetry state (agent server, no WebSocket broadcast)"""
 
-    def __init__(self, connection_string='udp:127.0.0.1:14550', socketio=None):
+    def __init__(self, connection_string='udp:127.0.0.1:14550'):
         self.connection_string = connection_string
-        self.socketio = socketio
         self.mav = None
         self.connected = False
 
@@ -103,7 +97,7 @@ class MAVLinkConnection:
                 try:
                     with self.send_lock:
                         self.mav.mav.heartbeat_send(
-                            mavutil.mavlink.MAV_TYPE_GCS,
+                            18,  # MAV_TYPE_ONBOARD_CONTROLLER
                             mavutil.mavlink.MAV_AUTOPILOT_INVALID,
                             0,
                             0,
@@ -142,7 +136,6 @@ class MAVLinkConnection:
                         if self.connected:
                             self.connected = False
                             print("Heartbeat timeout - marking disconnected")
-                            self._broadcast_telemetry()
                 elif not self.connected:
                     # Never received a heartbeat
                     pass
@@ -158,11 +151,9 @@ class MAVLinkConnection:
         if msg_type == 'HEARTBEAT':
             self.last_heartbeat = time.time()
             self.connected = True
-            if msg.type != 18:  # ignore MAV_TYPE_ONBOARD_CONTROLLER
-                self.armed = bool(msg.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED)
-                if msg.type != mavutil.mavlink.MAV_TYPE_GCS:
-                    self.vehicle_type = msg.type
-            self._broadcast_telemetry()
+            self.armed = bool(msg.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED)
+            if msg.type != mavutil.mavlink.MAV_TYPE_GCS:
+                self.vehicle_type = msg.type
 
         elif msg_type == 'HOME_POSITION':
             new_home = {
@@ -173,7 +164,6 @@ class MAVLinkConnection:
             if new_home != self.home_position:
                 self.home_position = new_home
                 print(f"Home position: {self.home_position}")
-            self._broadcast_telemetry()
 
         elif msg_type == 'GLOBAL_POSITION_INT':
             self.current_position = {
@@ -181,7 +171,6 @@ class MAVLinkConnection:
                 'longitude': msg.lon / 1e7
             }
             self.altitude = msg.relative_alt / 1000.0  # mm to m
-            self._broadcast_telemetry()
 
         elif msg_type == 'ATTITUDE':
             import math
@@ -189,21 +178,6 @@ class MAVLinkConnection:
             if yaw_deg < 0:
                 yaw_deg += 360
             self.heading = yaw_deg
-            self._broadcast_telemetry()
-
-    def _broadcast_telemetry(self):
-        """Broadcast telemetry to all connected WebSocket clients"""
-        if self.socketio:
-            telemetry = {
-                'connected': self.connected,
-                'home': self.home_position,
-                'position': self.current_position,
-                'altitude': self.altitude,
-                'heading': self.heading,
-                'armed': self.armed,
-                'vehicle_type': self.vehicle_type
-            }
-            self.socketio.emit('telemetry', telemetry, namespace='/ws/telemetry')
 
     def upload_mission(self, mavlink_items: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Upload mission to drone via MAVLink mission protocol.
@@ -341,10 +315,10 @@ class MAVLinkConnection:
                         command,
                         0,  # current
                         mavlink_item.get('autocontinue', 0),
-                        mavlink_item['param1'],
-                        mavlink_item['param2'],
-                        mavlink_item['param3'],
-                        mavlink_item['param4'],
+                        mavlink_item['param1'] if mavlink_item['param1'] is not None else float('nan'),
+                        mavlink_item['param2'] if mavlink_item['param2'] is not None else float('nan'),
+                        mavlink_item['param3'] if mavlink_item['param3'] is not None else float('nan'),
+                        mavlink_item['param4'] if mavlink_item['param4'] is not None else float('nan'),
                         mavlink_item['x'],
                         mavlink_item['y'],
                         mavlink_item['z']
@@ -355,10 +329,10 @@ class MAVLinkConnection:
                         target_system, target_component,
                         command,
                         0,  # confirmation
-                        mavlink_item['param1'],
-                        mavlink_item['param2'],
-                        mavlink_item['param3'],
-                        mavlink_item['param4'],
+                        mavlink_item['param1'] if mavlink_item['param1'] is not None else float('nan'),
+                        mavlink_item['param2'] if mavlink_item['param2'] is not None else float('nan'),
+                        mavlink_item['param3'] if mavlink_item['param3'] is not None else float('nan'),
+                        mavlink_item['param4'] if mavlink_item['param4'] is not None else float('nan'),
                         mavlink_item['x'] / 1e7 if mavlink_item.get('x') is not None else 0,
                         mavlink_item['y'] / 1e7 if mavlink_item.get('y') is not None else 0,
                         mavlink_item['z']
@@ -390,7 +364,7 @@ class MAVLinkConnection:
 
         Args:
             main_mode: PX4 custom main mode (e.g. 4 = AUTO)
-            sub_mode: PX4 custom sub mode (e.g. 2 = TAKEOFF, 3 = RTL, 4 = MISSION, 5 = LAND)
+            sub_mode: PX4 custom sub mode (e.g. 2 = TAKEOFF, 3 = LOITER, 4 = MISSION, 5 = RTL, 6 = LAND)
             label: Human-readable label for log messages
 
         Returns:
@@ -441,6 +415,49 @@ class MAVLinkConnection:
     def set_mode_auto(self) -> Dict[str, Any]:
         """Set drone to PX4 Mission mode (AUTO/MISSION) after mission upload."""
         return self.set_mode(4, 4, 'AUTO/MISSION')
+
+    def set_mode_rtl(self) -> Dict[str, Any]:
+        """Set drone to PX4 RTL mode (AUTO/RTL) for immediate return."""
+        return self.set_mode(4, 5, 'AUTO/RTL')
+
+    def send_rtl_command(self) -> Dict[str, Any]:
+        """Send MAV_CMD_NAV_RETURN_TO_LAUNCH (20) as COMMAND_LONG for immediate RTL."""
+        if not self.mav or not self.connected:
+            return {'success': False, 'message': 'MAVLink not connected'}
+
+        self._command_active.set()
+        while not self.protocol_queue.empty():
+            try:
+                self.protocol_queue.get_nowait()
+            except queue.Empty:
+                break
+
+        try:
+            with self.send_lock:
+                self.mav.mav.command_long_send(
+                    self.mav.target_system,
+                    self.mav.target_component,
+                    mavutil.mavlink.MAV_CMD_NAV_RETURN_TO_LAUNCH,  # 20
+                    0,           # confirmation
+                    0, 0, 0, 0, 0, 0, 0  # param1-7 all 0
+                )
+
+            try:
+                ack = self.protocol_queue.get(timeout=5.0)
+            except queue.Empty:
+                ack = None
+
+            if ack and ack.get_type() == 'COMMAND_ACK' and ack.result == mavutil.mavlink.MAV_RESULT_ACCEPTED:
+                return {'success': True, 'message': 'RTL command accepted'}
+            elif ack and ack.get_type() == 'COMMAND_ACK':
+                return {'success': False, 'message': f'RTL command rejected: result {ack.result}'}
+            else:
+                return {'success': False, 'message': 'RTL command: no ACK received'}
+
+        except Exception as e:
+            return {'success': False, 'message': f'RTL command failed: {str(e)}'}
+        finally:
+            self._command_active.clear()
 
     def arm(self, force=False) -> Dict[str, Any]:
         """Arm the drone.
@@ -543,274 +560,3 @@ class MAVLinkConnection:
         self.running = False
         if self.thread:
             self.thread.join(timeout=2)
-
-
-class GCSServer:
-    """Ground Control Station Server with MAVLink integration"""
-
-    def __init__(self, mavlink_connection='udp:127.0.0.1:14550', llm_server_url='http://localhost:5000'):
-        self.app = Flask(__name__)
-        CORS(self.app)
-
-        # Flask-SocketIO for WebSocket telemetry
-        self.socketio = SocketIO(self.app, cors_allowed_origins="*")
-
-        # MAVLink connection
-        self.mavlink = MAVLinkConnection(mavlink_connection, self.socketio) if mavlink_connection else None
-
-        # LLM Server URL
-        self.llm_server_url = llm_server_url
-
-        self._setup_routes()
-        self._setup_socketio()
-        if self.mavlink:
-            self._connect_mavlink()
-
-    def _connect_mavlink(self):
-        """Connect to MAVLink and start telemetry loop"""
-        if self.mavlink.connect():
-            self.mavlink.start_telemetry_loop()
-        else:
-            print("MAVLink not connected - GCS will run without telemetry")
-
-    def _auto_send_to_drone(self, mission_items: List[Dict], mode: str) -> Dict[str, Any]:
-        """Send MAVLink-format mission items to drone.
-
-        Shared between auto-send (in /api/plan) and manual send endpoints.
-        Items are expected to already be in MAVLink MISSION_ITEM_INT format.
-
-        Args:
-            mission_items: List of MAVLink MISSION_ITEM_INT format dicts
-            mode: 'mission' or 'command'
-
-        Returns:
-            Dict with 'success', 'message', and details
-        """
-        if not self.mavlink or not self.mavlink.connected:
-            return {'success': False, 'message': 'MAVLink not connected'}
-
-        try:
-            mavlink_items = mission_items
-
-            if mode == 'mission':
-                # Upload full mission + set AUTO mode
-                upload_result = self.mavlink.upload_mission(mavlink_items)
-                if upload_result['success']:
-                    mode_result = self.mavlink.set_mode_auto()
-                    return {
-                        'success': mode_result['success'],
-                        'message': f"{upload_result['message']}; {mode_result['message']}",
-                        'items_sent': upload_result.get('items_sent', 0),
-                        'mode_set': mode_result['success']
-                    }
-                return upload_result
-
-            elif mode == 'command':
-                PX4_AUTO = 4
-                vclass = _vehicle_class(self.mavlink.vehicle_type)
-
-                results = []
-                for mavlink_item in mavlink_items:
-                    cmd = mavlink_item['command']
-                    result = self._dispatch_command(mavlink_item, cmd, vclass, PX4_AUTO)
-                    results.append(result)
-
-                all_success = all(r['success'] for r in results)
-                return {
-                    'success': all_success,
-                    'message': '; '.join(r['message'] for r in results),
-                    'commands_sent': len(results)
-                }
-
-            else:
-                return {'success': False, 'message': f'Unknown mode: {mode}'}
-
-        except Exception as e:
-            return {'success': False, 'message': f'Send failed: {str(e)}'}
-
-    def _dispatch_command(self, mavlink_item: Dict[str, Any], cmd: int, vclass: str, PX4_AUTO: int = 4) -> Dict[str, Any]:
-        """Route a single MAVLink command to the appropriate send strategy.
-
-        Args:
-            mavlink_item: MAVLink MISSION_ITEM_INT format dict
-            cmd: MAVLink command number
-            vclass: Vehicle class string ('multirotor', 'fixed_wing', 'vtol', 'ground')
-            PX4_AUTO: PX4 AUTO main mode number (default 4)
-
-        Returns:
-            Dict with 'success' and 'message'
-        """
-        # RTL / LAND: mode-switch only, all vehicles
-        if cmd == 20:
-            return self.mavlink.set_mode(PX4_AUTO, 3, 'AUTO/RTL')
-        if cmd == 21:
-            return self.mavlink.set_mode(PX4_AUTO, 5, 'AUTO/LAND')
-
-        # NAV_WAYPOINT (16) and NAV_LOITER_UNLIM (17) are mission-protocol only.
-        # Remap to MAV_CMD_DO_REPOSITION (192) for direct command execution.
-        if cmd in (16, 17):
-            mavlink_item = dict(mavlink_item)
-            mavlink_item['command'] = 192
-            mavlink_item['param1'] = -1            # ground speed: -1 = no change
-            mavlink_item['param2'] = 1             # MAV_DO_REPOSITION_FLAGS_CHANGE_MODE
-            mavlink_item['param3'] = 0             # loiter radius (0 = default)
-            mavlink_item['param4'] = float('nan')  # yaw: NaN = keep current
-            cmd = 192
-
-        # All other commands (including TAKEOFF and nav cmds): send directly
-        # send_command() uses COMMAND_INT for nav_commands {16-22, 192}, COMMAND_LONG otherwise
-        return self.mavlink.send_command(mavlink_item)
-
-    def _setup_socketio(self):
-        """Setup WebSocket handlers"""
-        @self.socketio.on('connect', namespace='/ws/telemetry')
-        def handle_connect():
-            print("Browser connected to telemetry")
-            # Send current state immediately
-            if self.mavlink and self.mavlink.connected:
-                telemetry = {
-                    'connected': True,
-                    'home': self.mavlink.home_position,
-                    'position': self.mavlink.current_position,
-                    'altitude': self.mavlink.altitude,
-                    'heading': self.mavlink.heading,
-                    'armed': self.mavlink.armed,
-                    'vehicle_type': self.mavlink.vehicle_type
-                }
-                emit('telemetry', telemetry)
-
-    def _setup_routes(self):
-        """Setup HTTP routes"""
-
-        @self.app.route('/', methods=['GET'])
-        def index():
-            return send_file('static/index.html')
-
-        @self.app.route('/static/<path:filename>', methods=['GET'])
-        def static_files(filename):
-            return send_from_directory('static', filename)
-
-        @self.app.route('/api/status', methods=['GET'])
-        def status():
-            return jsonify({
-                "status": "running",
-                "agent_initialized": True,
-                "mavlink_connected": self.mavlink.connected if self.mavlink else False,
-                "llm_server": self.llm_server_url
-            })
-
-        @self.app.route('/api/plan', methods=['POST'])
-        def plan():
-            """Proxy planning request to LLM Server, with optional auto-send"""
-            try:
-                data = request.get_json()
-
-                # Add home_position from GCS telemetry
-                if self.mavlink and self.mavlink.home_position:
-                    data['home_position'] = self.mavlink.home_position
-
-                # Add heading from GCS telemetry
-                if self.mavlink and self.mavlink.heading is not None:
-                    data['heading'] = self.mavlink.heading
-
-                # Forward to LLM Server
-                response = requests.post(
-                    f"{self.llm_server_url}/api/plan",
-                    json=data,
-                    timeout=120
-                )
-
-                result = response.json()
-                result.pop('validation', None)  # validation is internal — do not expose to GCS
-
-                return jsonify(result), response.status_code
-
-            except requests.exceptions.ConnectionError:
-                return jsonify({
-                    "success": False,
-                    "error": f"Cannot connect to LLM Server at {self.llm_server_url}"
-                }), 503
-            except Exception as e:
-                return jsonify({
-                    "success": False,
-                    "error": str(e)
-                }), 500
-
-        @self.app.route('/api/send_mission', methods=['POST'])
-        def send_mission():
-            """Manual mission send endpoint"""
-            try:
-                data = request.get_json()
-                mission_items = data.get('mission_items', [])
-                if not mission_items:
-                    return jsonify({'success': False, 'message': 'No mission items provided'}), 400
-
-                result = self._auto_send_to_drone(mission_items, 'mission')
-                return jsonify(result)
-
-            except Exception as e:
-                return jsonify({'success': False, 'message': str(e)}), 500
-
-        @self.app.route('/api/send_command', methods=['POST'])
-        def send_command():
-            """Manual command send endpoint"""
-            try:
-                data = request.get_json()
-                command_item = data.get('command_item')
-                if not command_item:
-                    return jsonify({'success': False, 'message': 'No command item provided'}), 400
-
-                result = self._auto_send_to_drone([command_item], 'command')
-                return jsonify(result)
-
-            except Exception as e:
-                return jsonify({'success': False, 'message': str(e)}), 500
-
-        @self.app.route('/api/arm', methods=['POST'])
-        def arm_disarm():
-            """Arm or disarm the drone"""
-            try:
-                data = request.get_json()
-                action = data.get('action', 'arm')
-                force = data.get('force', False)
-
-                if not self.mavlink or not self.mavlink.connected:
-                    return jsonify({'success': False, 'message': 'MAVLink not connected'}), 503
-
-                if action == 'arm':
-                    result = self.mavlink.arm(force=force)
-                elif action == 'disarm':
-                    result = self.mavlink.disarm(force=force)
-                else:
-                    return jsonify({'success': False, 'message': f'Unknown action: {action}'}), 400
-
-                return jsonify(result)
-
-            except Exception as e:
-                return jsonify({'success': False, 'message': str(e)}), 500
-
-    def run(self, host='0.0.0.0', port=8080):
-        print(f"Starting GCS Server on http://{host}:{port}")
-        print(f"Telemetry WebSocket: ws://{host}:{port}/ws/telemetry")
-        print(f"LLM Server: {self.llm_server_url}")
-        if self.mavlink and self.mavlink.connected:
-            print(f"MAVLink connected: {self.mavlink.connection_string}")
-        self.socketio.run(self.app, host=host, port=port, allow_unsafe_werkzeug=True)
-
-
-def main():
-    import argparse
-    parser = argparse.ArgumentParser(description="GCS Server")
-    parser.add_argument("--port", type=int, default=8080, help="Port to bind to (default: 8080)")
-    parser.add_argument("--mavlink", default="udp:127.0.0.1:14550", help="MAVLink connection string (default: udp:127.0.0.1:14550)")
-    parser.add_argument("--llm-server", default="http://localhost:5000", help="LLM Server URL (default: http://localhost:5000)")
-    parser.add_argument("--no-mavlink", action="store_true", help="Run without MAVLink connection (testing only)")
-    args = parser.parse_args()
-
-    mavlink = None if args.no_mavlink else args.mavlink
-    server = GCSServer(mavlink_connection=mavlink, llm_server_url=args.llm_server)
-    server.run(port=args.port)
-
-
-if __name__ == "__main__":
-    main()

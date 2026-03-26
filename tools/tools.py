@@ -165,23 +165,19 @@ class MAVLinkToolBase(BaseTool):
             return "coordinates not specified"
 
 def get_command_tools(mission_manager: MissionManager) -> list:
-    """Get MAVLink tools for command mode - add tools only"""
-    from .add_waypoint_tool import AddWaypointTool
+    """Get MAVLink tools for command mode (multirotor) - hover loiter, no radius"""
     from .add_takeoff_tool import AddTakeoffTool
     from .add_rtl_tool import AddRTLTool
     from .add_loiter_tool import AddLoiterTool
-    from .add_survey_tool import AddSurveyTool
 
     return [
-        AddWaypointTool(mission_manager),
         AddTakeoffTool(mission_manager),
-        AddSurveyTool(mission_manager),
         AddRTLTool(mission_manager),
         AddLoiterTool(mission_manager),
     ]
 
 def get_mission_tools(mission_manager: MissionManager) -> list:
-    """Get all MAVLink mission planning tools for mission mode"""
+    """Get all MAVLink mission planning tools for mission mode (multirotor) - hover loiter"""
     from .add_waypoint_tool import AddWaypointTool
     from .add_takeoff_tool import AddTakeoffTool
     from .add_rtl_tool import AddRTLTool
@@ -191,7 +187,7 @@ def get_mission_tools(mission_manager: MissionManager) -> list:
     from .delete_mission_item_tool import DeleteMissionItemTool
     from .reorder_item_tool import ReorderItemTool
     from .move_item_tool import MoveItemTool
-    
+
     return [
         AddWaypointTool(mission_manager),
         AddTakeoffTool(mission_manager),
@@ -204,9 +200,112 @@ def get_mission_tools(mission_manager: MissionManager) -> list:
         MoveItemTool(mission_manager),
     ]
 
-def get_tools_for_mode(mission_manager: MissionManager, mode: str) -> list:
-    """Get appropriate tools for the specified mode"""
+def get_ground_command_tools(mission_manager: MissionManager) -> list:
+    """Get command tools for ground vehicles: no takeoff, no loiter"""
+    from .add_rtl_tool import AddRTLTool
+    return [AddRTLTool(mission_manager)]
+
+
+def get_ground_mission_tools(mission_manager: MissionManager) -> list:
+    """Get mission tools for ground vehicles: no takeoff, no loiter"""
+    from .add_waypoint_tool import AddWaypointTool
+    from .add_rtl_tool import AddRTLTool
+    from .add_survey_tool import AddSurveyTool
+    from .update_mission_item_tool import UpdateMissionItemTool
+    from .delete_mission_item_tool import DeleteMissionItemTool
+    from .reorder_item_tool import ReorderItemTool
+    from .move_item_tool import MoveItemTool
+    return [
+        AddWaypointTool(mission_manager), AddRTLTool(mission_manager),
+        AddSurveyTool(mission_manager), UpdateMissionItemTool(mission_manager),
+        DeleteMissionItemTool(mission_manager), ReorderItemTool(mission_manager),
+        MoveItemTool(mission_manager)
+    ]
+
+
+def get_fixed_wing_command_tools(mission_manager: MissionManager) -> list:
+    """Fixed-wing command tools: aerial tools with radius-based loiter"""
+    from .add_rtl_tool import AddRTLTool
+    from .add_loiter_tool import AddLoiterWithRadiusTool
+    return [
+        AddRTLTool(mission_manager),
+        AddLoiterWithRadiusTool(mission_manager),
+    ]
+
+
+def get_fixed_wing_mission_tools(mission_manager: MissionManager) -> list:
+    """Fixed-wing mission tools: aerial tools with radius-based loiter"""
+    from .add_waypoint_tool import AddWaypointTool
+    from .add_rtl_tool import AddRTLTool
+    from .add_loiter_tool import AddLoiterWithRadiusTool
+    from .add_survey_tool import AddSurveyTool
+    from .update_mission_item_tool import UpdateMissionItemTool
+    from .delete_mission_item_tool import DeleteMissionItemTool
+    from .reorder_item_tool import ReorderItemTool
+    from .move_item_tool import MoveItemTool
+    return [
+        AddWaypointTool(mission_manager),
+        AddSurveyTool(mission_manager),
+        AddRTLTool(mission_manager),
+        AddLoiterWithRadiusTool(mission_manager),
+        UpdateMissionItemTool(mission_manager),
+        DeleteMissionItemTool(mission_manager),
+        ReorderItemTool(mission_manager),
+        MoveItemTool(mission_manager),
+    ]
+
+
+def get_vtol_command_tools(mission_manager: MissionManager) -> list:
+    """VTOL command tools: takeoff, RTL, and radius-based loiter"""
+    from .add_takeoff_tool import AddTakeoffTool
+    from .add_rtl_tool import AddRTLTool
+    from .add_loiter_tool import AddLoiterWithRadiusTool
+    return [
+        AddTakeoffTool(mission_manager),
+        AddRTLTool(mission_manager),
+        AddLoiterWithRadiusTool(mission_manager),
+    ]
+
+
+def get_vtol_mission_tools(mission_manager: MissionManager) -> list:
+    """VTOL mission tools: all aerial tools with radius-based loiter"""
+    from .add_waypoint_tool import AddWaypointTool
+    from .add_takeoff_tool import AddTakeoffTool
+    from .add_rtl_tool import AddRTLTool
+    from .add_loiter_tool import AddLoiterWithRadiusTool
+    from .add_survey_tool import AddSurveyTool
+    from .update_mission_item_tool import UpdateMissionItemTool
+    from .delete_mission_item_tool import DeleteMissionItemTool
+    from .reorder_item_tool import ReorderItemTool
+    from .move_item_tool import MoveItemTool
+    return [
+        AddWaypointTool(mission_manager),
+        AddTakeoffTool(mission_manager),
+        AddSurveyTool(mission_manager),
+        AddRTLTool(mission_manager),
+        AddLoiterWithRadiusTool(mission_manager),
+        UpdateMissionItemTool(mission_manager),
+        DeleteMissionItemTool(mission_manager),
+        ReorderItemTool(mission_manager),
+        MoveItemTool(mission_manager),
+    ]
+
+
+def get_tools_for_mode(mission_manager: MissionManager, mode: str, vehicle_class: str = 'multirotor') -> list:
+    """Get appropriate tools for the specified mode and vehicle class"""
     if mode == "command":
+        if vehicle_class == 'ground':
+            return get_ground_command_tools(mission_manager)
+        if vehicle_class == 'vtol':
+            return get_vtol_command_tools(mission_manager)
+        if vehicle_class == 'fixed_wing':
+            return get_fixed_wing_command_tools(mission_manager)
         return get_command_tools(mission_manager)
     else:
+        if vehicle_class == 'ground':
+            return get_ground_mission_tools(mission_manager)
+        if vehicle_class == 'vtol':
+            return get_vtol_mission_tools(mission_manager)
+        if vehicle_class == 'fixed_wing':
+            return get_fixed_wing_mission_tools(mission_manager)
         return get_mission_tools(mission_manager)

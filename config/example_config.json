@@ -22,6 +22,8 @@
     "max_mission_items": 100,
     "auto_validate": true,
     "verbose_default": false,
+    "auto_send_to_drone": false,
+    "mavlink_connection_string": "",
     "single_takeoff_only": true,
     "single_rtl_only": true,
     "takeoff_must_be_first": true,

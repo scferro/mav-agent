@@ -36,6 +36,8 @@ class AgentConfig:
     max_mission_items: int = 0
     auto_validate: bool = False
     verbose_default: bool = False
+    auto_send_to_drone: bool = False
+    mavlink_connection_string: str = ""   # e.g. "udp:127.0.0.1:14550", empty = disabled
 
     # Mission structure validation
     single_takeoff_only: bool = False
@@ -54,7 +56,6 @@ class AgentConfig:
     takeoff_altitude_units: str = ""
     takeoff_min_altitude: float = 0.0
     takeoff_max_altitude: float = 0.0
-    takeoff_default_heading: str = ""
     
     # === WAYPOINT PARAMETERS ===
     waypoint_default_altitude: float = 0.0

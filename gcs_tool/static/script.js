@@ -16,10 +16,12 @@ class MAVLinkGCS {
             position: null,
             altitude: null,
             heading: null,
-            armed: false
+            armed: false,
+            vehicle_type: null
         };
         this.connected = false;
-        this.homePosition = null;  // Track home position for API requests
+        this.homePosition = null;
+        this.autoSendToDrone = false;
 
         this.initializeElements();
         this.attachEventListeners();
@@ -33,32 +35,29 @@ class MAVLinkGCS {
             telemAltitude: document.getElementById('telemAltitude'),
             telemHeading: document.getElementById('telemHeading'),
             telemArmed: document.getElementById('telemArmed'),
-            btnDownloadMission: document.getElementById('btnDownloadMission'),
-            btnUploadMission: document.getElementById('btnUploadMission'),
-            connectionBanner: document.getElementById('connectionBanner'),
-            connectionHelp: document.getElementById('connectionHelp'),
-            btnConnectGCS: document.getElementById('btnConnectGCS'),
-            retryConnectionBtn: document.getElementById('retryConnectionBtn')
+            telemVehicleType: document.getElementById('telemVehicleType'),
+            mavlinkDot: document.getElementById('mavlinkDot'),
+            mavlinkText: document.getElementById('mavlinkText'),
+            btnArm: document.getElementById('btnArm'),
+            btnDisarm: document.getElementById('btnDisarm'),
+            btnSendMission: document.getElementById('btnSendMission'),
+            btnSendCommand: document.getElementById('btnSendCommand'),
+            droneSendStatus: document.getElementById('droneSendStatus')
         };
     }
 
     attachEventListeners() {
-        // Mission download/upload buttons (future implementation)
-        if (this.elements.btnDownloadMission) {
-            this.elements.btnDownloadMission.addEventListener('click', () => this.downloadMission());
+        if (this.elements.btnArm) {
+            this.elements.btnArm.addEventListener('click', () => this.armDrone());
         }
-        if (this.elements.btnUploadMission) {
-            this.elements.btnUploadMission.addEventListener('click', () => this.uploadMission());
+        if (this.elements.btnDisarm) {
+            this.elements.btnDisarm.addEventListener('click', () => this.disarmDrone());
         }
-
-        // Connect to GCS button
-        if (this.elements.btnConnectGCS) {
-            this.elements.btnConnectGCS.addEventListener('click', () => this.connect());
+        if (this.elements.btnSendMission) {
+            this.elements.btnSendMission.addEventListener('click', () => this.sendMission());
         }
-
-        // Retry connection button
-        if (this.elements.retryConnectionBtn) {
-            this.elements.retryConnectionBtn.addEventListener('click', () => this.connect());
+        if (this.elements.btnSendCommand) {
+            this.elements.btnSendCommand.addEventListener('click', () => this.sendCommand());
         }
     }
 
@@ -66,12 +65,19 @@ class MAVLinkGCS {
         try {
             console.log(`Connecting to Flask telemetry WebSocket at ${this.serverUrl}`);
 
-            // Connect to Flask-SocketIO
+            // Fetch auto_send_to_drone status from GCS server
+            try {
+                const statusResp = await fetch(`${this.serverUrl}/api/status`);
+                const statusData = await statusResp.json();
+                this.autoSendToDrone = statusData.auto_send_to_drone || false;
+            } catch (e) {
+                console.warn('Could not fetch auto_send_to_drone status:', e);
+            }
+
             this.socket = io(`${this.serverUrl}/ws/telemetry`);
 
             this.socket.on('connect', () => {
-                console.log('✅ Connected to Flask telemetry WebSocket');
-                this.connected = true;
+                console.log('Connected to Flask telemetry WebSocket');
                 this.updateStatusDisplay();
             });
 
@@ -83,14 +89,15 @@ class MAVLinkGCS {
             });
 
             this.socket.on('telemetry', (data) => {
-                // Update telemetry state from server
+                // Track drone MAVLink connection, not WebSocket connection
+                this.connected = data.connected || false;
+
                 if (data.home) {
                     this.telemetry.home = data.home;
                     this.homePosition = {
                         latitude: data.home.latitude,
                         longitude: data.home.longitude
                     };
-                    this.hideConnectionBanner();  // Hide warning when we have home position
                 }
 
                 if (data.position) {
@@ -107,11 +114,15 @@ class MAVLinkGCS {
 
                 this.telemetry.armed = data.armed || false;
 
+                if (data.vehicle_type !== null && data.vehicle_type !== undefined) {
+                    this.telemetry.vehicle_type = data.vehicle_type;
+                }
+
                 this.updateStatusDisplay();
             });
 
         } catch (error) {
-            console.error('❌ Flask WebSocket connection failed:', error);
+            console.error('Flask WebSocket connection failed:', error);
             this.connected = false;
             this.updateStatusDisplay();
         }
@@ -127,33 +138,24 @@ class MAVLinkGCS {
         this.updateStatusDisplay();
     }
 
-    showConnectionBanner() {
-        if (this.elements.connectionBanner) {
-            this.elements.connectionBanner.style.display = 'block';
-        }
-    }
-
-    hideConnectionBanner() {
-        if (this.elements.connectionBanner) {
-            this.elements.connectionBanner.style.display = 'none';
-        }
+    vehicleTypeLabel(t) {
+        const m = {1: 'Fixed Wing', 2: 'Quadrotor', 3: 'Coaxial Heli', 4: 'Helicopter',
+                   10: 'Rover', 11: 'Boat', 19: 'VTOL Tailsitter', 20: 'VTOL Tiltrotor',
+                   21: 'VTOL Fixed Rotor', 22: 'VTOL Fixed-Wing'};
+        return m[t] || (t != null ? `MAV_TYPE ${t}` : '--');
     }
 
     updateStatusDisplay() {
-        if (!this.elements.telemetryStatus) return;
-
-        // Update connection status
-        this.elements.telemetryStatus.textContent = this.connected ? '🟢 Connected' : '🔴 Disconnected';
-
-        // Show/hide connection help based on connection status
-        if (this.elements.connectionHelp) {
-            if (this.connected && this.homePosition) {
-                this.elements.connectionHelp.classList.add('hidden');
-                this.hideConnectionBanner();
+        // Update MAVLink dot in header
+        if (this.elements.mavlinkDot) {
+            if (this.connected) {
+                this.elements.mavlinkDot.classList.add('connected');
             } else {
-                this.elements.connectionHelp.classList.remove('hidden');
-                this.showConnectionBanner();
+                this.elements.mavlinkDot.classList.remove('connected');
             }
+        }
+        if (this.elements.mavlinkText) {
+            this.elements.mavlinkText.textContent = this.connected ? 'MAVLink' : 'MAVLink';
         }
 
         // Update telemetry values
@@ -177,32 +179,157 @@ class MAVLinkGCS {
 
         if (this.elements.telemArmed) {
             this.elements.telemArmed.textContent = this.telemetry.armed ? 'ARMED' : 'DISARMED';
+            this.elements.telemArmed.className = this.telemetry.armed ? 'armed-status armed' : 'armed-status disarmed';
         }
 
-        // Enable/disable buttons based on connection
-        if (this.elements.btnDownloadMission) {
-            this.elements.btnDownloadMission.disabled = !this.connected;
+        if (this.elements.telemVehicleType) {
+            this.elements.telemVehicleType.textContent = this.vehicleTypeLabel(this.telemetry.vehicle_type);
         }
-        if (this.elements.btnUploadMission) {
-            this.elements.btnUploadMission.disabled = !this.connected;
+
+        // Arm/disarm buttons: enable based on connection, disable when already in target state
+        if (this.elements.btnArm) {
+            this.elements.btnArm.disabled = !this.connected || this.telemetry.armed;
+        }
+        if (this.elements.btnDisarm) {
+            this.elements.btnDisarm.disabled = !this.connected || !this.telemetry.armed;
+        }
+
+        // Enable/disable send buttons based on connection + having mission data
+        const client = window.mavlinkClient;
+        const hasMission = client && client.currentMission && client.currentMission.items && client.currentMission.items.length > 0;
+
+        if (this.elements.btnSendMission) {
+            this.elements.btnSendMission.disabled = !this.connected || !hasMission || this.autoSendToDrone;
+        }
+        if (this.elements.btnSendCommand) {
+            this.elements.btnSendCommand.disabled = !this.connected || !hasMission || this.autoSendToDrone;
         }
     }
 
-    async downloadMission() {
-        console.log('Download mission from drone (not yet implemented)');
-        // TODO: Send MISSION_REQUEST_LIST
-        // TODO: Receive MISSION_COUNT
-        // TODO: Request each item with MISSION_REQUEST_INT
-        // TODO: Parse MISSION_ITEM_INT responses
-        // TODO: Return array of MAVLink mission items
+    showDroneSendStatus(message, isSuccess) {
+        if (this.elements.droneSendStatus) {
+            this.elements.droneSendStatus.style.display = 'block';
+            this.elements.droneSendStatus.textContent = message;
+            this.elements.droneSendStatus.className = `drone-send-status ${isSuccess ? 'send-success' : 'send-error'}`;
+        }
     }
 
-    async uploadMission(missionItems) {
-        console.log('Upload mission to drone (not yet implemented)');
-        // TODO: Send MISSION_COUNT
-        // TODO: Wait for MISSION_REQUEST_INT for each item
-        // TODO: Send MISSION_ITEM_INT for each
-        // TODO: Wait for MISSION_ACK
+    async armDrone() {
+        this.elements.btnArm.disabled = true;
+        this.elements.btnArm.textContent = 'Arming...';
+
+        try {
+            const response = await fetch(`${this.serverUrl}/api/arm`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'arm', force: false })
+            });
+
+            const result = await response.json();
+            this.showDroneSendStatus(result.message, result.success);
+
+            const client = window.mavlinkClient;
+            if (result.success) {
+                if (client) client.addMessage('agent', `Drone armed: ${result.message}`);
+            } else {
+                if (client) client.addMessage('error', `Arm failed: ${result.message}`);
+            }
+        } catch (error) {
+            this.showDroneSendStatus(`Arm error: ${error.message}`, false);
+        } finally {
+            this.elements.btnArm.textContent = 'Arm';
+            this.updateStatusDisplay();
+        }
+    }
+
+    async disarmDrone() {
+        this.elements.btnDisarm.disabled = true;
+        this.elements.btnDisarm.textContent = 'Disarming...';
+
+        try {
+            const response = await fetch(`${this.serverUrl}/api/arm`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'disarm', force: false })
+            });
+
+            const result = await response.json();
+            this.showDroneSendStatus(result.message, result.success);
+
+            const client = window.mavlinkClient;
+            if (result.success) {
+                if (client) client.addMessage('agent', `Drone disarmed: ${result.message}`);
+            } else {
+                if (client) client.addMessage('error', `Disarm failed: ${result.message}`);
+            }
+        } catch (error) {
+            this.showDroneSendStatus(`Disarm error: ${error.message}`, false);
+        } finally {
+            this.elements.btnDisarm.textContent = 'Disarm';
+            this.updateStatusDisplay();
+        }
+    }
+
+    async sendMission() {
+        const client = window.mavlinkClient;
+        if (!client || !client.currentMission || !client.currentMission.items) return;
+
+        this.elements.btnSendMission.disabled = true;
+        this.elements.btnSendMission.textContent = 'Sending...';
+
+        try {
+            const response = await fetch(`${this.serverUrl}/api/send_mission`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mission_items: client.currentMission.items })
+            });
+
+            const result = await response.json();
+            this.showDroneSendStatus(result.message, result.success);
+
+            if (result.success) {
+                client.addMessage('agent', `Mission sent to drone: ${result.message}`);
+            } else {
+                client.addMessage('error', `Send failed: ${result.message}`);
+            }
+        } catch (error) {
+            this.showDroneSendStatus(`Send error: ${error.message}`, false);
+            client.addMessage('error', `Send error: ${error.message}`);
+        } finally {
+            this.elements.btnSendMission.textContent = 'Send & Execute Mission';
+            this.updateStatusDisplay();
+        }
+    }
+
+    async sendCommand() {
+        const client = window.mavlinkClient;
+        if (!client || !client.currentMission || !client.currentMission.items || !client.currentMission.items.length) return;
+
+        this.elements.btnSendCommand.disabled = true;
+        this.elements.btnSendCommand.textContent = 'Sending...';
+
+        try {
+            const response = await fetch(`${this.serverUrl}/api/send_command`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ command_item: client.currentMission.items[0] })
+            });
+
+            const result = await response.json();
+            this.showDroneSendStatus(result.message, result.success);
+
+            if (result.success) {
+                client.addMessage('agent', `Command sent to drone: ${result.message}`);
+            } else {
+                client.addMessage('error', `Send failed: ${result.message}`);
+            }
+        } catch (error) {
+            this.showDroneSendStatus(`Send error: ${error.message}`, false);
+            client.addMessage('error', `Send error: ${error.message}`);
+        } finally {
+            this.elements.btnSendCommand.textContent = 'Send Command';
+            this.updateStatusDisplay();
+        }
     }
 }
 
@@ -214,99 +341,94 @@ class MAVLinkAgentClient {
         this.isProcessing = false;
 
         // Client-side state management
-        this.currentMission = null;  // Track mission client-side
-        this.chatHistory = [];       // Track conversation client-side
+        this.currentMission = null;
+        this.chatHistory = [];
 
         this.initializeElements();
         this.attachEventListeners();
         this.checkServerConnection();
     }
-    
-    initializeElements() {
-        // Get DOM elements
-        this.elements = {
-            // Status elements
-            statusDot: document.getElementById('statusDot'),
-            statusText: document.getElementById('statusText'),
 
-            // Mode elements
+    initializeElements() {
+        this.elements = {
+            serverDot: document.getElementById('serverDot'),
+            serverText: document.getElementById('serverText'),
+
             missionModeBtn: document.getElementById('missionModeBtn'),
             commandModeBtn: document.getElementById('commandModeBtn'),
             missionDesc: document.getElementById('missionDesc'),
             commandDesc: document.getElementById('commandDesc'),
 
-            // Chat elements
             chatMessages: document.getElementById('chatMessages'),
             messageInput: document.getElementById('messageInput'),
             sendButton: document.getElementById('sendButton'),
 
-            // Mission state elements
             missionItems: document.getElementById('missionItems'),
 
-            // Loading elements
             loadingOverlay: document.getElementById('loadingOverlay')
         };
     }
-    
+
     attachEventListeners() {
-        // Mode switching
         this.elements.missionModeBtn.addEventListener('click', () => this.switchMode('mission'));
         this.elements.commandModeBtn.addEventListener('click', () => this.switchMode('command'));
 
-        // Input handling
         this.elements.messageInput.addEventListener('input', () => {
             this.updateSendButton();
         });
 
         this.elements.sendButton.addEventListener('click', () => this.sendMessage());
 
-        // Initial state
         this.updateSendButton();
     }
-    
+
     async checkServerConnection() {
         try {
             const response = await fetch(`${this.baseUrl}/api/status`);
-            const status = await response.json();
-            
-            this.isConnected = status.agent_initialized === true;
-            this.updateConnectionStatus();
-            
+            this.isConnected = response.ok;
         } catch (error) {
-            console.error('Connection check failed:', error);
             this.isConnected = false;
-            this.updateConnectionStatus();
         }
+        this.updateConnectionStatus();
+        setTimeout(() => this.checkServerConnection(), 5000);
     }
-    
+
     updateConnectionStatus() {
         if (this.isConnected) {
-            this.elements.statusDot.classList.add('connected');
-            this.elements.statusText.textContent = 'Connected';
+            this.elements.serverDot.classList.add('connected');
+            this.elements.serverText.textContent = 'Server';
         } else {
-            this.elements.statusDot.classList.remove('connected');
-            this.elements.statusText.textContent = 'Disconnected';
+            this.elements.serverDot.classList.remove('connected');
+            this.elements.serverText.textContent = 'Server';
         }
-        
+
         this.updateSendButton();
     }
-    
+
     switchMode(mode) {
         this.currentMode = mode;
 
-        // Update button states
         this.elements.missionModeBtn.classList.toggle('active', mode === 'mission');
         this.elements.commandModeBtn.classList.toggle('active', mode === 'command');
 
-        // Update descriptions
         this.elements.missionDesc.classList.toggle('active', mode === 'mission');
         this.elements.commandDesc.classList.toggle('active', mode === 'command');
+
+        // Toggle send button visibility based on mode
+        const gcs = window.mavlinkGCS;
+        if (gcs) {
+            if (gcs.elements.btnSendMission) {
+                gcs.elements.btnSendMission.style.display = mode === 'mission' ? 'inline-block' : 'none';
+            }
+            if (gcs.elements.btnSendCommand) {
+                gcs.elements.btnSendCommand.style.display = mode === 'command' ? 'inline-block' : 'none';
+            }
+        }
 
         // Clear chat and mission state when switching modes
         this.clearChat();
         this.clearMissionState();
 
-        // Clear client-side state
         this.currentMission = null;
         this.chatHistory = [];
 
@@ -316,24 +438,25 @@ class MAVLinkAgentClient {
             this.addMessage('agent', 'Switched to Mission Mode. Build your mission step by step.');
         }
 
-        // Focus input
         this.elements.messageInput.focus();
+
+        // Update send buttons state
+        if (gcs) gcs.updateStatusDisplay();
     }
-    
+
     updateSendButton() {
         const hasText = this.elements.messageInput.value.trim().length > 0;
         const canSend = this.isConnected && hasText && !this.isProcessing;
-        
+
         this.elements.sendButton.disabled = !canSend;
     }
-    
+
     async sendMessage() {
         const message = this.elements.messageInput.value.trim();
         if (!message || !this.isConnected || this.isProcessing) {
             return;
         }
 
-        // Handle special commands
         if (message.toLowerCase() === 'clear') {
             this.clearChat();
             this.elements.messageInput.value = '';
@@ -341,29 +464,23 @@ class MAVLinkAgentClient {
             return;
         }
 
-        // Check GCS connection
         const gcs = window.mavlinkGCS;
         const hasGCS = gcs && gcs.connected && gcs.homePosition;
 
-        // Build request with current mission state in MAVLink format
         const requestBody = {
             user_input: message,
             mode: this.currentMode,
-            mission_state: this.currentMission ? this.currentMission.items : null  // Send MAVLink mission items
+            mission_state: this.currentMission ? this.currentMission.items : null,
+            vehicle_type: gcs ? gcs.telemetry.vehicle_type : null
         };
 
-        // Note: home_position is NOT sent from browser anymore - GCS server adds it from telemetry
-
-        // Warn if no GCS and no mission state
         if (!hasGCS && !requestBody.mission_state) {
             this.addMessage('warning',
-                '⚠️ GCS telemetry not connected. Server may not have home position.');
+                'GCS telemetry not connected. Server may not have home position.');
         }
 
-        // Add user message to chat
         this.addMessage('user', message);
 
-        // Clear input and show loading
         this.elements.messageInput.value = '';
         this.updateSendButton();
         this.showLoading(true);
@@ -381,12 +498,11 @@ class MAVLinkAgentClient {
             const result = await response.json();
 
             if (result.success) {
-                // Add agent response
                 if (result.output) {
                     this.addMessage('agent', result.output);
                 }
 
-                // Update client-side mission state (mission_items in MAVLink format)
+                // Update client-side mission state
                 if (result.mission_items && result.mission_items.length > 0) {
                     this.currentMission = {
                         items: result.mission_items,
@@ -395,7 +511,6 @@ class MAVLinkAgentClient {
                     };
                 }
 
-                // Add to chat history
                 this.chatHistory.push({
                     role: 'user',
                     content: message
@@ -405,10 +520,25 @@ class MAVLinkAgentClient {
                     content: result.output
                 });
 
-                // Update UI with delta information
                 this.updateMissionDisplay(result);
+
+                // Check for auto-send result
+                if (result.drone_send) {
+                    const ds = result.drone_send;
+                    const statusMsg = ds.success
+                        ? `Auto-sent to drone: ${ds.message}`
+                        : `Auto-send failed: ${ds.message}`;
+                    this.addMessage(ds.success ? 'agent' : 'error', statusMsg);
+
+                    if (gcs) {
+                        gcs.showDroneSendStatus(ds.message, ds.success);
+                    }
+                }
+
+                // Update send button state after we have mission data
+                if (gcs) gcs.updateStatusDisplay();
+
             } else {
-                // Show error message
                 this.addMessage('error', `Error: ${result.error || 'Unknown error occurred'}`);
             }
 
@@ -424,17 +554,15 @@ class MAVLinkAgentClient {
             this.elements.messageInput.focus();
         }
     }
-    
+
     addMessage(type, content) {
         const messageDiv = document.createElement('div');
         messageDiv.className = `message ${type}-message`;
-        
+
         const contentDiv = document.createElement('div');
         contentDiv.className = 'message-content';
-        
-        // Process content for better display
+
         if (typeof content === 'string') {
-            // Convert newlines to <br> and preserve formatting
             contentDiv.innerHTML = content
                 .replace(/\n/g, '<br>')
                 .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
@@ -442,130 +570,115 @@ class MAVLinkAgentClient {
         } else {
             contentDiv.textContent = String(content);
         }
-        
+
         messageDiv.appendChild(contentDiv);
         this.elements.chatMessages.appendChild(messageDiv);
-        
-        // Scroll to bottom
+
         this.elements.chatMessages.scrollTop = this.elements.chatMessages.scrollHeight;
     }
-    
+
     clearChat() {
-        // Remove all messages except welcome message
         const messages = this.elements.chatMessages.querySelectorAll('.message:not(.welcome-message)');
         messages.forEach(msg => msg.remove());
     }
-    
+
     clearMissionState() {
-        // Reset mission state panel to empty state
         this.elements.missionItems.innerHTML = '<div class="empty-mission">No mission items yet</div>';
     }
-    
+
+    mavCmdName(cmd) {
+        const names = {
+            16: 'NAV_WAYPOINT', 17: 'NAV_LOITER_UNLIM', 18: 'NAV_LOITER_TURNS',
+            19: 'NAV_LOITER_TIME', 20: 'NAV_RETURN_TO_LAUNCH', 21: 'NAV_LAND',
+            22: 'NAV_TAKEOFF', 84: 'NAV_VTOL_TAKEOFF', 85: 'NAV_VTOL_LAND',
+            192: 'DO_REPOSITION', 201: 'DO_SET_ROI'
+        };
+        return names[cmd] || `CMD_${cmd}`;
+    }
+
+    mavCmdEmoji(cmd) {
+        const emojis = {16: '📍', 17: '🔄', 20: '🏠', 21: '🛬', 22: '🚀'};
+        return emojis[cmd] || '❓';
+    }
+
+    mavCmdParamNames(cmd) {
+        const defs = {
+            16:  ['hold(s)', 'accept_r(m)', 'pass_r(m)', 'yaw(°)',       'lat', 'lon', 'alt(m)'],
+            17:  ['—',       '—',           'radius(m)', 'yaw(°)',       'lat', 'lon', 'alt(m)'],
+            18:  ['turns',   'hdg_req',     'radius(m)', 'xtrack(m)',    'lat', 'lon', 'alt(m)'],
+            19:  ['time(s)', 'hdg_req',     'radius(m)', 'xtrack(m)',    'lat', 'lon', 'alt(m)'],
+            20:  ['—',       '—',           '—',         '—',            '—',   '—',   '—'     ],
+            21:  ['abort_alt','land_mode',  '—',         'yaw(°)',       'lat', 'lon', 'alt(m)'],
+            22:  ['min_pitch','—',          '—',         'yaw(°)',       'lat', 'lon', 'alt(m)'],
+            84:  ['—',       'hdg_mode',    '—',         'yaw(°)',       'lat', 'lon', 'alt(m)'],
+            85:  ['—',       '—',           '—',         'yaw(°)',       'lat', 'lon', 'alt(m)'],
+            192: ['speed(m/s)','bitmask',   'radius(m)', 'yaw(°)',       'lat', 'lon', 'alt(m)'],
+        };
+        return defs[cmd] || ['param1','param2','param3','param4','x','y','z'];
+    }
+
+    mavFrameName(frame) {
+        const frames = {
+            0: 'GLOBAL', 1: 'LOCAL_NED', 2: 'MISSION',
+            3: 'GLOBAL_REL_ALT', 4: 'LOCAL_ENU', 5: 'GLOBAL_INT',
+            6: 'GLOBAL_REL_ALT_INT', 7: 'LOCAL_OFFSET_NED',
+            8: 'BODY_NED', 9: 'BODY_OFFSET_NED', 10: 'GLOBAL_TERRAIN_ALT',
+            11: 'GLOBAL_TERRAIN_ALT_INT'
+        };
+        return frames[frame] ? `${frame} (${frames[frame]})` : `${frame}`;
+    }
+
     updateMissionDisplay(result) {
-        // If no mission items, show empty state
         if (!result.mission_items || result.mission_items.length === 0) {
             this.elements.missionItems.innerHTML = '<div class="empty-mission">No mission items yet</div>';
             return;
         }
 
-        const itemsHtml = result.mission_items.map((item, index) => {
-            const commandType = item.command_type || 'unknown';
-            const emoji = this.getCommandEmoji(commandType);
+        const itemsHtml = result.mission_items.map((item) => {
+            const cmd = item.command;
+            const cmdName = this.mavCmdName(cmd);
+            const emoji = this.mavCmdEmoji(cmd);
+            const labels = this.mavCmdParamNames(cmd);
 
-            // Check if this item was added or modified
             const isNew = result.added_items?.some(a => a.seq === item.seq);
             const isModified = result.modified_items?.some(m => m.seq === item.seq);
 
             const badge = isNew ? '<span class="badge new">NEW</span>' :
                          isModified ? '<span class="badge modified">MODIFIED</span>' : '';
 
-            let details = [];
+            const rawLat = item.x / 1e7;
+            const rawLon = item.y / 1e7;
+            const latVal = (item.x === 0 && item.y === 0) ? '—' : rawLat.toFixed(7);
+            const lonVal = (item.x === 0 && item.y === 0) ? '—' : rawLon.toFixed(7);
+            const altVal = typeof item.z === 'number' ? item.z.toFixed(2) : item.z;
 
-            // Add altitude info
-            if (item.altitude !== null && item.altitude !== undefined) {
-                details.push(`Altitude: ${item.altitude} ${item.altitude_units || 'units'}`);
-            }
+            const paramVals = [item.param1, item.param2, item.param3, item.param4, latVal, lonVal, altVal];
 
-            // Add position info
-            if (item.latitude !== null && item.longitude !== null) {
-                details.push(`Position: ${item.latitude.toFixed(6)}, ${item.longitude.toFixed(6)}`);
-            } else if (item.mgrs) {
-                details.push(`Position: MGRS ${item.mgrs}`);
-            } else if (item.distance && item.heading) {
-                let positionText = `Position: ${item.distance} ${item.distance_units || 'units'} ${item.heading}`;
-                if (item.relative_reference_frame) {
-                    positionText += ` from ${item.relative_reference_frame}`;
-                }
-                details.push(positionText);
-            }
-
-            // Add radius for loiter/survey
-            if (item.radius !== null && item.radius !== undefined) {
-                details.push(`Radius: ${item.radius} ${item.radius_units || 'units'}`);
-            }
-
-            // Add heading for takeoff commands
-            if (commandType === 'takeoff' && item.heading) {
-                details.push(`Heading: ${item.heading}`);
-            }
-
-            // Add search parameters
-            if (item.search_target) {
-                details.push(`Target: ${item.search_target}`);
-            }
-            if (item.detection_behavior) {
-                details.push(`Behavior: ${item.detection_behavior}`);
-            }
+            const rows = labels.map((label, i) => {
+                const raw = paramVals[i];
+                const val = (raw === undefined || raw === null || (typeof raw === 'number' && isNaN(raw))) ? '' : raw;
+                return `<tr><td>${label}</td><td>${val}</td></tr>`;
+            }).join('');
 
             return `
                 <div class="mission-item ${isNew ? 'item-new' : ''} ${isModified ? 'item-modified' : ''}">
                     <div class="mission-item-header">
-                        ${emoji} ${index + 1}. ${commandType.toUpperCase()} ${badge}
+                        ${emoji} ${item.seq}. ${cmdName} (${cmd}) ${badge}
                     </div>
                     <div class="mission-item-details">
-                        ${details.map(detail => `<div>${detail}</div>`).join('')}
+                        <table class="mission-item-table">
+                            ${rows}
+                            <tr><td>frame</td><td>${this.mavFrameName(item.frame)}</td></tr>
+                            <tr><td>autocontinue</td><td>${item.autocontinue}</td></tr>
+                        </table>
                     </div>
                 </div>
             `;
         }).join('');
 
-        // Show validation if available
-        let validationHtml = '';
-        if (result.validation) {
-            const validClass = result.validation.valid ? 'valid' : 'invalid';
-            const validIcon = result.validation.valid ? '✓' : '✗';
-
-            validationHtml = `
-                <div class="validation ${validClass}">
-                    <strong>${validIcon} Validation: ${result.validation.valid ? 'Valid' : 'Invalid'}</strong>
-                    ${result.validation.errors?.length > 0 ? `
-                        <ul class="errors">
-                            ${result.validation.errors.map(err => `<li>${err}</li>`).join('')}
-                        </ul>
-                    ` : ''}
-                    ${result.validation.warnings?.length > 0 ? `
-                        <ul class="warnings">
-                            ${result.validation.warnings.map(warn => `<li>${warn}</li>`).join('')}
-                        </ul>
-                    ` : ''}
-                </div>
-            `;
-        }
-
-        this.elements.missionItems.innerHTML = itemsHtml + validationHtml;
+        this.elements.missionItems.innerHTML = itemsHtml;
     }
-    
-    getCommandEmoji(commandType) {
-        const emojis = {
-            'takeoff': '🚀',
-            'waypoint': '📍',
-            'loiter': '🔄',
-            'survey': '🗺️',
-            'rtl': '🏠'
-        };
-        return emojis[commandType] || '❓';
-    }
-    
+
     showLoading(show) {
         if (show) {
             this.elements.loadingOverlay.classList.add('active');

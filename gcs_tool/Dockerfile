@@ -23,6 +23,7 @@ EXPOSE 8080
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
+ENV MAVLINK20=1
 
 # Run GCS server (using 127.0.0.1 for host network mode)
 CMD ["python3", "gcs_server.py", "--port=8080", "--mavlink=udp:127.0.0.1:14550", "--llm-server=http://127.0.0.1:5000"]

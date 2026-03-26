@@ -8,6 +8,7 @@ Main function: convert_units(value, from_unit, to_unit)
 """
 
 from typing import Optional, Dict
+import math
 
 
 # Conversion factors to meters (base unit)
@@ -135,10 +136,45 @@ def convert_to_meters(value: float, from_unit: Optional[str]) -> float:
     return convert_units(value, from_unit, 'meters')
 
 
+# Heading / compass direction utilities
+
+HEADING_MAP: Dict[str, float] = {
+    'north': 0.0, 'n': 0.0,
+    'northeast': 45.0, 'ne': 45.0,
+    'east': 90.0, 'e': 90.0,
+    'southeast': 135.0, 'se': 135.0,
+    'south': 180.0, 's': 180.0,
+    'southwest': 225.0, 'sw': 225.0,
+    'west': 270.0, 'w': 270.0,
+    'northwest': 315.0, 'nw': 315.0,
+}
+
+
+def heading_to_degrees(heading) -> float:
+    """Convert a heading value to degrees.
+
+    Accepts:
+      - numeric (int/float): returned as-is
+      - string compass direction: 'north', 'ne', 'southwest', etc.
+      - numeric string: '180', '45.5', etc.
+
+    Returns:
+        Heading in degrees (0-360). Defaults to 0.0 for unrecognised values.
+    """
+    if isinstance(heading, (int, float)):
+        return float(heading)
+    if isinstance(heading, str):
+        lookup = heading.lower().strip()
+        if lookup in HEADING_MAP:
+            return HEADING_MAP[lookup]
+        try:
+            return float(lookup)
+        except ValueError:
+            return 0.0
+    return 0.0
+
+
 # Coordinate conversion utilities
-
-import math
-
 def calculate_absolute_coordinates(ref_lat: float, ref_lon: float, distance: float, heading: str, distance_units: str = 'meters') -> tuple[float, float]:
     """
     Calculate absolute lat/long coordinates from a reference point using distance and compass heading
@@ -160,18 +196,7 @@ def calculate_absolute_coordinates(ref_lat: float, ref_lon: float, distance: flo
     distance_meters = convert_to_meters(distance, distance_units)
     
     # Convert heading to bearing in degrees
-    heading_map = {
-        'north': 0,
-        'northeast': 45,
-        'east': 90,
-        'southeast': 135,
-        'south': 180,
-        'southwest': 225,
-        'west': 270,
-        'northwest': 315
-    }
-    
-    bearing_degrees = heading_map.get(heading.lower(), 0)
+    bearing_degrees = heading_to_degrees(heading)
     bearing_radians = math.radians(bearing_degrees)
     
     # Earth radius in meters

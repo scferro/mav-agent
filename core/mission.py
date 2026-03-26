@@ -38,6 +38,9 @@ class MissionItem:
     # Search parameters (for waypoint, loiter, survey)
     search_target: Optional[str] = None
     detection_behavior: Optional[str] = None
+
+    # VTOL transition parameters
+    transition_mode: Optional[str] = None  # 'forward' (MC→FW) or 'hover' (FW→MC)
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary format"""
@@ -60,6 +63,7 @@ class MissionItem:
             'relative_reference_frame': self.relative_reference_frame,
             'search_target': self.search_target,
             'detection_behavior': self.detection_behavior,
+            'transition_mode': self.transition_mode,
         }
 
     @classmethod
@@ -93,6 +97,7 @@ class MissionItem:
             relative_reference_frame=data.get('relative_reference_frame'),
             search_target=data.get('search_target'),
             detection_behavior=data.get('detection_behavior'),
+            transition_mode=data.get('transition_mode'),
         )
 
 @dataclass
@@ -139,6 +144,16 @@ class Mission:
         mission.modified_at = datetime.fromisoformat(data.get('modified_at', datetime.now().isoformat()))
 
         return mission
+
+    def clear_items(self):
+        """Remove all mission items"""
+        self.items = []
+        self.modified_at = datetime.now()
+
+    def add_item(self, item: MissionItem):
+        """Append a mission item"""
+        self.items.append(item)
+        self.modified_at = datetime.now()
 
     def to_mavlink(self) -> List[Dict[str, Any]]:
         """Convert mission to MAVLink MISSION_ITEM_INT format"""

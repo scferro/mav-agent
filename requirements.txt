@@ -2,7 +2,8 @@
 langchain>=0.3.0
 langchain-community>=0.3.0
 langchain-core>=0.3.0
-langchain-ollama>=0.2.0
+langchain-ollama==0.2.3
+langgraph>=0.2.0
 
 # Model interface
 requests>=2.31.0
@@ -19,6 +20,9 @@ ujson>=5.0.0
 # Flask server dependencies
 flask>=3.0.0
 flask-cors>=4.0.0
+
+# MAVLink protocol
+pymavlink>=2.4.40
 
 # TensorRT-LLM (optional for GPU acceleration)
 # Requires CUDA 12.x and compatible NVIDIA GPU

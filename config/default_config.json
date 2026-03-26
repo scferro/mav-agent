@@ -1,9 +1,9 @@
 {
   "model": {
     "type": "ollama",
-    "name": "qwen3:4b-instruct",
+    "name": "ministral-3:3b",
     "base_url": "http://localhost:11434",
-    "temperature": 0.4,
+    "temperature": 0.15,
     "top_p": 0.6,
     "top_k": 30,
     "max_tokens": 65536
@@ -12,6 +12,8 @@
     "max_mission_items": 100,
     "auto_validate": true,
     "verbose_default": false,
+    "auto_send_to_drone": true,
+    "mavlink_connection_string": "udp:127.0.0.1:14540",
 
     "single_takeoff_only": true,
     "single_rtl_only": true,

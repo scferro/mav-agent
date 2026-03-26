@@ -11,9 +11,15 @@
         <header class="header">
             <div class="header-content">
                 <h1>🚁 MAVLink Agent</h1>
-                <div class="connection-status" id="connectionStatus">
-                    <span class="status-dot" id="statusDot"></span>
-                    <span id="statusText">Connecting...</span>
+                <div class="header-status">
+                    <div class="connection-indicator">
+                        <span class="status-dot" id="serverDot"></span>
+                        <span id="serverText">Server</span>
+                    </div>
+                    <div class="connection-indicator">
+                        <span class="status-dot" id="mavlinkDot"></span>
+                        <span id="mavlinkText">MAVLink</span>
+                    </div>
                 </div>
             </div>
         </header>
@@ -22,19 +28,6 @@
             <!-- Telemetry Panel -->
             <div class="telemetry-panel" id="telemetryPanel">
                 <div class="telemetry-header">
-                    <h3>🚁 MAVLink GCS</h3>
-                    <span class="telemetry-status-large" id="telemetryStatus">🔴 Disconnected</span>
-                </div>
-                <div class="connection-help" id="connectionHelp">
-                    <p><strong>To connect MAVLink:</strong></p>
-                    <ol>
-                        <li>Start SITL simulation:<br><code>sim_vehicle.py -v ArduCopter --console --map</code></li>
-                        <li>Start LLM Server:<br><code>python server.py</code></li>
-                        <li>Start GCS Server (connects automatically to SITL):<br><code>python gcs_server.py</code></li>
-                        <li>Telemetry will appear below when connected</li>
-                    </ol>
-                    <p>Or start GCS server with custom MAVLink connection:</p>
-                    <code>python gcs_server.py --mavlink=udpin:0.0.0.0:14550</code>
                 </div>
                 <div class="telemetry-grid">
                     <div class="telemetry-item">
@@ -57,11 +50,18 @@
                         <label>Armed:</label>
                         <span id="telemArmed">--</span>
                     </div>
+                    <div class="telemetry-item">
+                        <label>Vehicle:</label>
+                        <span id="telemVehicleType">--</span>
+                    </div>
                 </div>
                 <div class="telemetry-actions">
-                    <button id="btnDownloadMission" class="telemetry-btn" disabled>Download Mission</button>
-                    <button id="btnUploadMission" class="telemetry-btn" disabled>Upload Mission</button>
+                    <button id="btnArm" class="send-btn arm-btn" disabled>Arm</button>
+                    <button id="btnDisarm" class="send-btn disarm-btn" disabled>Disarm</button>
+                    <button id="btnSendMission" class="send-btn send-mission-btn" disabled style="display: inline-block;">Send &amp; Execute Mission</button>
+                    <button id="btnSendCommand" class="send-btn send-command-btn" disabled style="display: none;">Send Command</button>
                 </div>
+                <div class="drone-send-status" id="droneSendStatus" style="display: none;"></div>
             </div>
 
             <div class="mode-selector">
@@ -79,18 +79,6 @@
                 </div>
                 <div class="mode-desc" id="commandDesc">
                     <strong>Command Mode:</strong> Single commands with reset - each command creates a fresh mission
-                </div>
-            </div>
-
-            <!-- GCS Connection Banner -->
-            <div class="connection-banner" id="connectionBanner" style="display: none;">
-                <div class="banner-content">
-                    <span class="banner-icon">⚠️</span>
-                    <div class="banner-message">
-                        <strong>GCS Connection Required</strong>
-                        <p>Connect to MAVLink GCS to enable mission planning. The system needs home position and telemetry data.</p>
-                    </div>
-                    <button id="retryConnectionBtn" class="banner-btn">Retry Connection</button>
                 </div>
             </div>
 

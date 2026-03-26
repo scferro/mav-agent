@@ -47,15 +47,40 @@ class MAVLinkAgent:
         self.current_mode = None
         self.agent_graph = None
         self.chat_history = []
+
+        # Telemetry (set by plan() before mode handlers run)
+        self._heading = None
+        self._vehicle_class = 'multirotor'
     
-    def _setup_tools_for_mode(self, mode: str):
+    @staticmethod
+    def _vehicle_class_from_type(vehicle_type) -> str:
+        """Map a MAV_TYPE integer to a vehicle class string."""
+        MULTIROTOR_TYPES = {2, 3, 4, 13, 14, 15}
+        FIXED_WING_TYPES = {1}
+        VTOL_TYPES = {19, 20, 21, 22, 23, 24, 25}
+        GROUND_TYPES = {10, 11}
+        if vehicle_type in VTOL_TYPES:
+            return 'vtol'
+        if vehicle_type in FIXED_WING_TYPES:
+            return 'fixed_wing'
+        if vehicle_type in MULTIROTOR_TYPES:
+            return 'multirotor'
+        if vehicle_type in GROUND_TYPES:
+            return 'ground'
+        return 'multirotor'
+
+    def _setup_tools_for_mode(self, mode: str, vehicle_class: str = 'multirotor'):
         """Setup tools and mission manager for specific mode"""
         # Create mission manager first
         self.mission_manager = MissionManager(mode=mode)
 
+        # Propagate telemetry stored on agent to new mission manager
+        self.mission_manager.heading = self._heading
+        self.mission_manager.vehicle_class = vehicle_class
+
         # Model interface already initialized - reuse it
         # Only recreate tools (lightweight)
-        self.tools = get_tools_for_mode(self.mission_manager, mode)
+        self.tools = get_tools_for_mode(self.mission_manager, mode, vehicle_class)
 
         # Debug: print tool info
         if self.verbose:
@@ -91,24 +116,30 @@ class MAVLinkAgent:
             raise RuntimeError(f"Failed to initialize agent: {str(e)}")
     
     
-    def mission_mode(self, user_input: str) -> Dict[str, Any]:
+    def mission_mode(self, user_input: str, mission_state=None) -> Dict[str, Any]:
         """Execute mission mode - interactive mission building"""
-        
+
         # Setup tools for mission mode only if not already in mission mode
         if self.current_mode != "mission":
             self.current_mode = "mission"
-            self._setup_tools_for_mode("mission")
-        
+            self._setup_tools_for_mode("mission", self._vehicle_class)
+
         # Set mission manager to mission mode for strict validation
         self.mission_manager.set_mode("mission")
-        
+
+        # Load provided mission state for updates (after manager exists)
+        if mission_state:
+            from core.mission import Mission
+            loaded = Mission.from_dict(mission_state)
+            self.mission_manager.current_mission = loaded
+
         # Only clear chat history and create new mission if no mission exists
         if not self.mission_manager.has_mission():
             self.chat_history = []
             self.mission_manager.create_mission()
             
             # Inject system prompt only once when mission is first created
-            base_system_prompt = get_system_prompt("mission")
+            base_system_prompt = get_system_prompt("mission", vehicle_class=self._vehicle_class)
             self.chat_history.append(SystemMessage(content=base_system_prompt))
         
         try:
@@ -206,9 +237,9 @@ class MAVLinkAgent:
     def command_mode(self, user_input: str) -> Dict[str, Any]:
         """Execute command mode - single commands with reset"""
         self.current_mode = "command"
-        
-        # Setup tools for command mode (always reset for command mode)  
-        self._setup_tools_for_mode("command")
+
+        # Setup tools for command mode (always reset for command mode)
+        self._setup_tools_for_mode("command", self._vehicle_class)
         
         # Set mission manager to command mode for relaxed validation
         self.mission_manager.set_mode("command")
@@ -217,7 +248,7 @@ class MAVLinkAgent:
         self.chat_history = []
         self.mission_manager.create_mission()
 
-        system_prompt = get_system_prompt("command")
+        system_prompt = get_system_prompt("command", vehicle_class=self._vehicle_class)
         
         try:
             # Append current action state to user message for context in command mode
@@ -269,25 +300,17 @@ class MAVLinkAgent:
             # Get final mission state with automatic coordinate conversion for display
             mission = self.mission_manager.get_mission()
             mission_state = mission.to_dict(convert_to_absolute=True) if mission else None
-            
-            # Reset for next command (clear mission and chat history)
-            self.chat_history = []
-            self.mission_manager.clear_mission()
-            
+
             return {
                 "success": True,
-                "mode": "command", 
+                "mode": "command",
                 "input": user_input,
                 "output": output,
                 "mission_state": mission_state,
                 "intermediate_steps": result.get("messages", []) if self.verbose else []
             }
-            
-        except Exception as e:
-            # Reset even on error
-            self.chat_history = []
-            self.mission_manager.clear_mission()
 
+        except Exception as e:
             # In verbose mode or on error, try to print message chain if available
             try:
                 if 'result' in locals() and result.get("messages"):
@@ -344,7 +367,9 @@ class MAVLinkAgent:
              user_input: str,
              mode: str = "mission",
              mission_state: Optional[Dict] = None,
-             home_position: Optional[Dict] = None) -> Dict[str, Any]:
+             home_position: Optional[Dict] = None,
+             heading: Optional[float] = None,
+             vehicle_type: Optional[int] = None) -> Dict[str, Any]:
         """
         Unified stateless planning endpoint.
 
@@ -353,6 +378,7 @@ class MAVLinkAgent:
             mode: 'mission' or 'command'
             mission_state: Current mission or action state (optional)
             home_position: Dict with 'latitude', 'longitude' from GCS (optional but recommended)
+            heading: Drone's current yaw in degrees from GCS telemetry (optional)
 
         Returns:
             {
@@ -370,22 +396,23 @@ class MAVLinkAgent:
                 }
             }
         """
-        from core.mission import Mission
-
         # Save current state
         original_mission = self.mission_manager.get_mission() if self.mission_manager else None
         original_history = self.chat_history.copy()
         original_mode = self.current_mode
+        original_vehicle_class = self._vehicle_class
+
+        # Derive vehicle class from MAV_TYPE and store for tool selection
+        self._vehicle_class = self._vehicle_class_from_type(vehicle_type)
+
+        # Store heading on agent so _setup_tools_for_mode() can propagate it
+        self._heading = heading
 
         try:
-            # Load request context
-            if mission_state:
-                loaded_mission = Mission.from_dict(mission_state)
-                self.mission_manager.current_mission = loaded_mission
-
-            # Route to appropriate mode handler
+            # Route to appropriate mode handler (creates mission_manager if needed)
+            # mission_state is passed to mission_mode so it can load after setup
             if mode == "mission":
-                result = self.mission_mode(user_input)
+                result = self.mission_mode(user_input, mission_state=mission_state)
             elif mode == "command":
                 result = self.command_mode(user_input)
             else:
@@ -396,21 +423,27 @@ class MAVLinkAgent:
                 result,
                 original_mission,
                 self.mission_manager.get_mission(),
-                home_position
+                home_position,
+                vehicle_class=self._vehicle_class
             )
 
             return enhanced_result
 
         finally:
             # Always restore original state
-            self.mission_manager.current_mission = original_mission
+            self._heading = None
+            self._vehicle_class = original_vehicle_class
+            if self.mission_manager:
+                self.mission_manager.current_mission = original_mission
+                self.mission_manager.heading = None
             self.chat_history = original_history
             self.current_mode = original_mode
 
     def _enhance_with_deltas(self, result: Dict,
                             old_mission,
                             new_mission,
-                            home_position: Optional[Dict] = None) -> Dict:
+                            home_position: Optional[Dict] = None,
+                            vehicle_class: str = 'multirotor') -> Dict:
         """Calculate what changed in the mission
 
         Args:
@@ -425,24 +458,9 @@ class MAVLinkAgent:
         old_items = old_mission.items if old_mission else []
         new_items = new_mission.items if new_mission else []
 
-        # Simple seq-based diff
-        old_seqs = {item.seq: item for item in old_items}
-        new_seqs = {item.seq: item for item in new_items}
-
-        added = [item.to_dict() for seq, item in new_seqs.items()
-                 if seq not in old_seqs]
-        deleted = [item.to_dict() for seq, item in old_seqs.items()
-                   if seq not in new_seqs]
-        modified = [item.to_dict() for seq, item in new_seqs.items()
-                    if seq in old_seqs and item.to_dict() != old_seqs[seq].to_dict()]
-
-        # Add mission_items array to result
-        result['mission_items'] = [item.to_dict() for item in new_items]
-        result['added_items'] = added
-        result['modified_items'] = modified
-        result['deleted_items'] = deleted
-
         # Add validation information (pass home_position for coordinate conversion)
+        # Validate BEFORE serialization — validation modifies items in-place
+        # (auto-adds takeoff/RTL, converts relative to absolute coords, etc.)
         if new_mission:
             valid, errors = self.mission_manager.validate_mission(home_position=home_position)
             result['validation'] = {
@@ -456,6 +474,28 @@ class MAVLinkAgent:
                 'errors': [],
                 'warnings': []
             }
+
+        # Re-read items after validation since it may insert new items
+        new_items = new_mission.items if new_mission else []
+
+        # Simple seq-based diff
+        old_seqs = {item.seq: item for item in old_items}
+        new_seqs = {item.seq: item for item in new_items}
+
+        from core.mavlink_format import mission_item_to_mavlink
+
+        added = [mission_item_to_mavlink(item, vehicle_class=vehicle_class) for seq, item in new_seqs.items()
+                 if seq not in old_seqs]
+        deleted = [mission_item_to_mavlink(item, vehicle_class=vehicle_class) for seq, item in old_seqs.items()
+                   if seq not in new_seqs]
+        modified = [mission_item_to_mavlink(item, vehicle_class=vehicle_class) for seq, item in new_seqs.items()
+                    if seq in old_seqs and item.to_dict() != old_seqs[seq].to_dict()]
+
+        # Add mission_items array to result (serialized AFTER validation, in MAVLink format)
+        result['mission_items'] = [mission_item_to_mavlink(item, vehicle_class=vehicle_class) for item in new_items]
+        result['added_items'] = added
+        result['modified_items'] = modified
+        result['deleted_items'] = deleted
 
         return result
 

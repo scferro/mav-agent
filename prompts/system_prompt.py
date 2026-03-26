@@ -36,14 +36,22 @@ Rules:
 
 
 
-def get_system_prompt(mode: str) -> str:
+VEHICLE_CONTEXT = {
+    'vtol': "Vehicle type: VTOL. Takeoff automatically transitions to fixed-wing. PX4 automatically transitions back to multicopter for RTL and landing. Loiter orbits at a location with a specified radius.",
+    'fixed_wing': "Vehicle type: Fixed-wing. No takeoff/landing commands in normal missions — use waypoints only. RTL returns aircraft to launch point. Loiter causes the aircraft to circle at a location with a specified radius.",
+    'multirotor': "Vehicle type: Multicopter/multirotor. Loiter means hover in place at a point (no radius needed).",
+    'ground': "Vehicle type: Ground vehicle (rover/boat). No takeoff or loiter commands.",
+}
+
+
+def get_system_prompt(mode: str, vehicle_class: str = 'multirotor') -> str:
     """
-    Get the appropriate system prompt for the specified mode
-    
+    Get the appropriate system prompt for the specified mode and vehicle class.
+
     Args:
-        mode: One of 'command'| 'mission'
-        mission_context: Current mission state (for update mode)
-    
+        mode: One of 'command' | 'mission'
+        vehicle_class: One of 'multirotor', 'fixed_wing', 'vtol', 'ground'
+
     Returns:
         Complete system prompt for the mode
     """
@@ -51,6 +59,7 @@ def get_system_prompt(mode: str) -> str:
         prompt = COMMAND_SYSTEM_PROMPT
     else:
         prompt = MISSION_SYSTEM_PROMPT
-    
-    return prompt
+
+    vehicle_context = VEHICLE_CONTEXT.get(vehicle_class, VEHICLE_CONTEXT['multirotor'])
+    return prompt + vehicle_context + "\n"
 

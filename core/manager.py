@@ -20,6 +20,9 @@ class MissionManager:
         self.current_action: Optional[MissionItem] = None  # For command mode
         self.mode = mode
         self.validator = MissionValidator(get_settings())
+        # Telemetry from GCS (set by agent before LLM execution)
+        self.heading: Optional[float] = None
+        self.vehicle_class: str = 'multirotor'
     
     def create_mission(self) -> Mission:
         """Create a new current mission"""
@@ -74,9 +77,9 @@ class MissionManager:
         mission.modified_at = datetime.now()
         return item
     
-    def add_takeoff(self, lat: float, lon: float, alt: float, 
-                   altitude_units: Optional[str] = None, 
-                   latitude: Optional[float] = None, longitude: Optional[float] = None, 
+    def add_takeoff(self, lat: float, lon: float, alt: float,
+                   altitude_units: Optional[str] = None,
+                   latitude: Optional[float] = None, longitude: Optional[float] = None,
                    altitude: Optional[float] = None, mgrs: Optional[str] = None,
                    heading: Optional[str] = None,
                    search_target: Optional[str] = None, detection_behavior: Optional[str] = None) -> MissionItem:
@@ -143,6 +146,22 @@ class MissionManager:
         )
         return self.insert_item_at(item, None)  # None = add at end
     
+    def add_land(self, altitude: Optional[float] = None,
+                 altitude_units: Optional[str] = None,
+                 latitude: Optional[float] = None, longitude: Optional[float] = None) -> MissionItem:
+        """Add land command - always goes at the end"""
+        mission = self._get_current_mission_or_raise()
+
+        item = MissionItem(
+            seq=0,  # Will be set by insert_item_at
+            command_type='land',
+            altitude=altitude,
+            altitude_units=altitude_units,
+            latitude=latitude,
+            longitude=longitude,
+        )
+        return self.insert_item_at(item, None)  # None = add at end
+
     def add_loiter(self, lat: float, lon: float, alt: float,
                   radius: float, radius_units: Optional[str] = None, insert_at: Optional[int] = None,
                   latitude: Optional[float] = None, longitude: Optional[float] = None, 
@@ -224,7 +243,9 @@ class MissionManager:
         is_valid, errors, fixes_applied = self.validator.validate_mission(
             mission,
             self.mode,
-            home_position=home_position
+            home_position=home_position,
+            heading=self.heading,
+            vehicle_class=self.vehicle_class
         )
 
         # Combine errors and fixes for reporting
@@ -290,7 +311,7 @@ class MissionManager:
                 # Always show heading for takeoff commands (VTOL transition direction)
                 if item.command_type == 'takeoff' and hasattr(item, 'heading') and item.heading is not None:
                     item_data["heading"] = item.heading
-                
+
                 # Show search parameters if any are specified (for all command types)
                 if ((hasattr(item, 'search_target') and item.search_target is not None) or (hasattr(item, 'detection_behavior') and item.detection_behavior is not None)):
                     search_target = item.search_target if item.search_target is not None else "(search_target)"
@@ -361,7 +382,7 @@ class MissionManager:
         # Always show heading for takeoff commands (VTOL transition direction)
         if action.command_type == 'takeoff' and hasattr(action, 'heading') and action.heading is not None:
             action_data["heading"] = action.heading
-        
+
         # Show search parameters if any are specified
         if ((hasattr(action, 'search_target') and action.search_target is not None) or (hasattr(action, 'detection_behavior') and action.detection_behavior is not None)):
             search_target = action.search_target if action.search_target is not None else "(search_target)"

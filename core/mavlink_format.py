@@ -13,6 +13,8 @@ MAV_CMD_NAV_LOITER_TIME = 19
 MAV_CMD_NAV_RETURN_TO_LAUNCH = 20
 MAV_CMD_NAV_LAND = 21
 MAV_CMD_NAV_TAKEOFF = 22
+MAV_CMD_NAV_VTOL_TAKEOFF = 84
+MAV_CMD_NAV_VTOL_LAND = 85
 MAV_CMD_DO_SET_ROI = 201
 
 # Frame constants
@@ -32,13 +34,17 @@ COMMAND_TYPE_TO_MAVLINK = {
 }
 
 MAVLINK_TO_COMMAND_TYPE = {v: k for k, v in COMMAND_TYPE_TO_MAVLINK.items()}
+# Add VTOL command reverse mapping (normalize to internal types)
+MAVLINK_TO_COMMAND_TYPE[MAV_CMD_NAV_VTOL_TAKEOFF] = 'takeoff'
+MAVLINK_TO_COMMAND_TYPE[MAV_CMD_NAV_VTOL_LAND] = 'land'
 
 
-def mission_item_to_mavlink(item: 'MissionItem') -> Dict[str, Any]:
+def mission_item_to_mavlink(item: 'MissionItem', vehicle_class: str = 'multirotor') -> Dict[str, Any]:
     """Convert internal MissionItem to MAVLink MISSION_ITEM_INT format
 
     Args:
         item: Internal MissionItem with command_type, lat/lon, altitude, etc.
+        vehicle_class: Vehicle class string ('multirotor', 'fixed_wing', 'vtol', 'ground')
 
     Returns:
         Dict matching MAVLink MISSION_ITEM_INT format:
@@ -57,10 +63,17 @@ def mission_item_to_mavlink(item: 'MissionItem') -> Dict[str, Any]:
             'z': float  # altitude in meters
         }
     """
-    from core.units import convert_to_meters
+    from core.units import convert_to_meters, heading_to_degrees
 
     # Get MAVLink command number
     command = COMMAND_TYPE_TO_MAVLINK.get(item.command_type, MAV_CMD_NAV_WAYPOINT)
+
+    # Override command for VTOL vehicles
+    if vehicle_class == 'vtol':
+        if item.command_type == 'takeoff':
+            command = MAV_CMD_NAV_VTOL_TAKEOFF
+        elif item.command_type == 'land':
+            command = MAV_CMD_NAV_VTOL_LAND
 
     # Convert coordinates
     x = int((item.latitude or 0) * 1e7)
@@ -76,29 +89,27 @@ def mission_item_to_mavlink(item: 'MissionItem') -> Dict[str, Any]:
     param1 = param2 = param3 = param4 = 0.0
 
     if item.command_type == 'takeoff':
-        param1 = 0.0  # Min pitch
-        # Convert heading text to yaw angle if needed
-        heading_value = item.heading or 0
-        if isinstance(heading_value, str):
-            # Try to convert text heading to degrees (handled by tools, but fallback to 0)
-            param4 = 0.0
+        if vehicle_class == 'vtol':
+            # MAV_CMD_NAV_VTOL_TAKEOFF (84)
+            # param2: transition heading = 3 (specific heading, provided in param4)
+            param2 = 3.0
+            param4 = heading_to_degrees(item.heading or 0)
         else:
-            param4 = float(heading_value)
+            # NAV_TAKEOFF (22)
+            param1 = 0.0  # Min pitch
+            param4 = heading_to_degrees(item.heading or 0)
 
     elif item.command_type == 'loiter':
-        param3 = item.radius or 0  # Loiter radius
-        param3 = convert_to_meters(param3, item.radius_units or 'feet')
+        if vehicle_class in ('fixed_wing', 'vtol'):
+            param3 = convert_to_meters(item.radius or 0, item.radius_units or 'feet')
+        else:
+            param3 = 0.0  # Hover in place — radius is meaningless for MC/ground
 
     elif item.command_type == 'waypoint' or item.command_type == 'survey':
         param1 = 0.0  # Hold time
         param2 = 2.0  # Acceptance radius (meters)
         param3 = 0.0  # Pass through
-        # Convert heading text to yaw angle if needed
-        heading_value = item.heading or 0
-        if isinstance(heading_value, str):
-            param4 = 0.0
-        else:
-            param4 = float(heading_value)
+        param4 = heading_to_degrees(item.heading or 0)
 
     return {
         'seq': item.seq,
@@ -163,9 +174,9 @@ def mission_item_from_mavlink(mav_item: Dict[str, Any]) -> 'MissionItem':
     return item
 
 
-def mission_to_mavlink(mission: 'Mission') -> List[Dict[str, Any]]:
+def mission_to_mavlink(mission: 'Mission', vehicle_class: str = 'multirotor') -> List[Dict[str, Any]]:
     """Convert Mission to list of MAVLink MISSION_ITEM_INT dicts"""
-    return [mission_item_to_mavlink(item) for item in mission.items]
+    return [mission_item_to_mavlink(item, vehicle_class=vehicle_class) for item in mission.items]
 
 
 def mission_from_mavlink(mav_items: List[Dict[str, Any]]) -> 'Mission':

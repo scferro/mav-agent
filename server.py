@@ -26,6 +26,7 @@ class MAVLinkAgentServer:
         
         # Initialize MAVLinkAgent
         self.agent: Optional[MAVLinkAgent] = None
+        self.mavlink = None
         self.verbose = verbose
         
         # Setup logging
@@ -34,6 +35,7 @@ class MAVLinkAgentServer:
         
         self._setup_routes()
         self._initialize_agent()
+        self._initialize_mavlink()
     
     def _clean_result_for_json(self, result: Dict[str, Any]) -> Dict[str, Any]:
         """Clean result dictionary to ensure JSON serialization"""
@@ -58,9 +60,20 @@ class MAVLinkAgentServer:
                     # Skip intermediate_steps if not verbose
                     continue
             else:
-                cleaned[key] = value
-        
+                cleaned[key] = self._sanitize_value(value)
+
         return cleaned
+
+    def _sanitize_value(self, value):
+        """Recursively replace NaN floats with None for JSON serialization"""
+        import math
+        if isinstance(value, float) and math.isnan(value):
+            return None
+        if isinstance(value, dict):
+            return {k: self._sanitize_value(v) for k, v in value.items()}
+        if isinstance(value, list):
+            return [self._sanitize_value(v) for v in value]
+        return value
     
     def _initialize_agent(self):
         """Initialize the MAVLinkAgent instance"""
@@ -70,6 +83,22 @@ class MAVLinkAgentServer:
         except Exception as e:
             print(f"❌ Failed to initialize MAVLinkAgent: {e}")
             self.agent = None
+
+    def _initialize_mavlink(self):
+        """Initialize MAVLink connection if configured"""
+        settings = get_settings()
+        conn_str = settings.agent.mavlink_connection_string
+        if not conn_str:
+            self.mavlink = None
+            return
+        from core.mavlink_connection import MAVLinkConnection
+        self.mavlink = MAVLinkConnection(conn_str)
+        if self.mavlink.connect():
+            self.mavlink.start_telemetry_loop()
+            print(f"MAVLink connected: {conn_str}")
+        else:
+            print(f"MAVLink connection failed: {conn_str}")
+            self.mavlink = None
     
     def _setup_routes(self):
         """Setup Flask routes"""
@@ -117,7 +146,11 @@ class MAVLinkAgentServer:
                 user_input = data['user_input']
                 mode = data.get('mode', 'mission')  # Default to mission mode
                 mission_state_mavlink = data.get('mission_state', None)
-                home_position = data.get('home_position', None)  # NEW: from GCS
+                home_position = data.get('home_position', None)  # From GCS
+                heading = data.get('heading', None)  # From GCS telemetry (yaw in degrees)
+                vehicle_type = data.get('vehicle_type', None)  # MAV_TYPE integer from GCS heartbeat
+                if vehicle_type is None and self.mavlink and self.mavlink.vehicle_type is not None:
+                    vehicle_type = self.mavlink.vehicle_type
 
                 # Validate mode
                 if mode not in ['mission', 'command']:
@@ -133,32 +166,49 @@ class MAVLinkAgentServer:
                         "error": "Missing required data: Either 'mission_state' or 'home_position' required. Connect to GCS or provide mission state."
                     }), 400
 
-                # Convert MAVLink mission to internal format if provided
+                # Convert mission state from MAVLink format to internal format if provided
                 mission_state_internal = None
                 if mission_state_mavlink:
                     from core.mission import Mission
-                    mission_state_internal = Mission.from_mavlink(mission_state_mavlink)
-                    mission_state_internal = mission_state_internal.to_dict()
+                    mission_state_internal = Mission.from_mavlink(mission_state_mavlink).to_dict()
 
                 # Execute planning with internal format
                 result = self.agent.plan(
                     user_input=user_input,
                     mode=mode,
                     mission_state=mission_state_internal,
-                    home_position=home_position
+                    home_position=home_position,
+                    heading=heading,
+                    vehicle_type=vehicle_type
                 )
 
-                # Convert result mission to MAVLink format ONLY (no custom format)
-                if result.get('success') and result.get('mission_state'):
-                    from core.mission import Mission
-                    mission = Mission.from_dict(result['mission_state'])
-
-                    # Replace mission_state with mission_items (MAVLink format)
-                    result['mission_items'] = mission.to_mavlink()
-                    del result['mission_state']  # Remove old format
+                # Remove internal mission_state from response
+                # (mission_items already populated by agent in internal format)
+                if 'mission_state' in result:
+                    del result['mission_state']
 
                 # Clean for JSON serialization
                 clean_result = self._clean_result_for_json(result)
+
+                # Auto-send to drone if configured
+                settings = get_settings()
+                if (settings.agent.auto_send_to_drone
+                        and self.mavlink and self.mavlink.connected
+                        and clean_result.get('success')
+                        and clean_result.get('mission_items')):
+                    if mode == 'mission':
+                        send_result = self.mavlink.upload_mission(clean_result['mission_items'])
+                        if send_result['success']:
+                            self.mavlink.set_mode_auto()
+                    elif mode == 'command':
+                        items = clean_result['mission_items']
+                        if items:
+                            item = items[0]
+                            MAV_CMD_NAV_RETURN_TO_LAUNCH = 20
+                            if item.get('command') == MAV_CMD_NAV_RETURN_TO_LAUNCH:
+                                self.mavlink.send_rtl_command()
+                            else:
+                                self.mavlink.send_command(item)
 
                 return jsonify(clean_result)
 

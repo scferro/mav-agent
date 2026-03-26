@@ -33,7 +33,7 @@ class TakeoffInput(BaseModel):
         return validate_coordinates(v)
     
     # VTOL transition heading
-    heading: Optional[str] = Field(None, description="Direction VTOL will point during transition to forward flight: 'north', 'northeast', 'east', 'southeast', 'south', 'southwest', 'west', 'northwest'. Typically into the wind. Use ONLY when direction is specified.")
+    heading: Optional[str] = Field(None, description="Direction the drone faces on takeoff. Cardinal direction ('north', 'northeast', etc.) or numeric degrees ('90', '270'). Use only when the user specifies a direction.")
 
 
 class AddTakeoffTool(MAVLinkToolBase):
@@ -44,8 +44,9 @@ class AddTakeoffTool(MAVLinkToolBase):
     def __init__(self, mission_manager):
         super().__init__(mission_manager)
     
-    def _run(self, coordinates: Optional[Union[str, tuple]] = None, 
-             altitude: Optional[Union[float, tuple]] = None, mgrs: Optional[str] = None, heading: Optional[str] = None) -> str:
+    def _run(self, coordinates: Optional[Union[str, tuple]] = None,
+             altitude: Optional[Union[float, tuple]] = None, mgrs: Optional[str] = None,
+             heading: Optional[str] = None) -> str:
         # Create response
         response = ""
 
@@ -73,13 +74,13 @@ class AddTakeoffTool(MAVLinkToolBase):
             actual_alt = altitude_value if altitude_value is not None else 10.0  # Default takeoff altitude
             
             item = self.mission_manager.add_takeoff(
-                actual_lat, actual_lon, actual_alt, 
+                actual_lat, actual_lon, actual_alt,
                 altitude_units=altitude_units,
                 latitude=latitude,
                 longitude=longitude,
                 altitude=altitude_value,
                 mgrs=mgrs,
-                heading=heading
+                heading=heading,
             )
             
             # Validate mission after adding takeoff

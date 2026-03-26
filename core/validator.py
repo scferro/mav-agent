@@ -16,14 +16,20 @@ class MissionValidator:
         self.settings = settings
     
     def validate_mission(self, mission: Mission, mode: str,
-                        home_position: Optional[Dict] = None) -> Tuple[bool, List[str], List[str]]:
+                        home_position: Optional[Dict] = None,
+                        heading: Optional[float] = None,
+                        vehicle_class: str = 'multirotor') -> Tuple[bool, List[str], List[str]]:
         """Validate mission for safety and completeness
 
         Args:
             mission: Mission to validate
             mode: 'mission' or 'command'
             home_position: Dict with 'latitude', 'longitude' from GCS (optional but recommended)
+            heading: Drone's current yaw in degrees from GCS telemetry (optional)
         """
+        # Store telemetry for use in private methods
+        self._home_position = home_position
+        self._heading = heading
         errors = []
         fixes_applied = []
 
@@ -149,7 +155,7 @@ class MissionValidator:
         if self.settings.agent.auto_add_missing_rtl:
             rtl_fixes = self._ensure_rtl_exists(mission)
             fixes.extend(rtl_fixes)
-        
+
         # Parameter completion is now handled at the main validation level
         
         # Check for multiple takeoffs/RTLs (after auto-addition)
@@ -206,14 +212,24 @@ class MissionValidator:
         has_takeoff = any(getattr(item, 'command_type', None) == 'takeoff' for item in mission.items)
         
         if not has_takeoff:
+            # Use home position (where drone was armed) if available, otherwise leave None
+            takeoff_lat = None
+            takeoff_lon = None
+            if self._home_position:
+                takeoff_lat = self._home_position.get('latitude')
+                takeoff_lon = self._home_position.get('longitude')
+
+            # Use drone's current heading if available, otherwise leave None
+            takeoff_heading = self._heading
+
             takeoff = MissionItem(
                 seq=0,
                 command_type='takeoff',
                 altitude=self.settings.agent.takeoff_default_altitude,
                 altitude_units=self.settings.agent.takeoff_altitude_units,
-                latitude=self.settings.agent.takeoff_initial_latitude,
-                longitude=self.settings.agent.takeoff_initial_longitude,
-                heading=self.settings.agent.takeoff_default_heading
+                latitude=takeoff_lat,
+                longitude=takeoff_lon,
+                heading=takeoff_heading
             )
             mission.items.insert(0, takeoff)
             self._resequence_items(mission)
@@ -243,6 +259,7 @@ class MissionValidator:
         
         return fixes
 
+
     def _complete_missing_parameters(self, mission: Mission) -> List[str]:
         """Complete missing parameters using command-specific defaults and smart strategies"""
         fixes = []
@@ -251,7 +268,11 @@ class MissionValidator:
             command_type = getattr(item, 'command_type', None)
             if not command_type:
                 continue
-            
+
+            # LAND items are fully specified — skip parameter completion
+            if command_type in ('land',):
+                continue
+
             # Complete altitude_units FIRST (needed for unit conversion)
             if hasattr(item, 'altitude_units') and item.altitude_units is None:
                 item.altitude_units = getattr(self.settings.agent, f"{command_type}_altitude_units")
@@ -277,11 +298,11 @@ class MissionValidator:
                 coord_fixes = self._complete_coordinates(item, command_type, mission, i)
                 fixes.extend(coord_fixes)
             
-            # Complete heading for takeoff commands (always required, cannot be unset)
+            # Complete heading for takeoff commands using drone's current heading
             if command_type == 'takeoff':
-                if not hasattr(item, 'heading') or item.heading is None:
-                    item.heading = self.settings.agent.takeoff_default_heading
-                    fixes.append(f"Set takeoff heading: {item.heading}")
+                if item.heading is None and self._heading is not None:
+                    item.heading = self._heading
+                    fixes.append(f"Set takeoff heading from current drone heading: {self._heading:.1f}°")
             
             # Complete distance_units for relative positioning
             if hasattr(item, 'distance_units') and item.distance_units is None and hasattr(item, 'distance') and item.distance is not None:
@@ -415,11 +436,14 @@ class MissionValidator:
                        hasattr(item, 'heading') and item.heading is not None)
         
         if not (has_lat_lon or has_mgrs or has_relative):
-            # Special handling for takeoff - use initial coordinates from settings
+            # Special handling for takeoff - use home position (where drone was armed)
             if command_type == 'takeoff':
-                item.latitude = self.settings.agent.takeoff_initial_latitude
-                item.longitude = self.settings.agent.takeoff_initial_longitude
-                fixes.append(f"Set takeoff location from settings: {item.latitude:.6f}, {item.longitude:.6f}")
+                if self._home_position:
+                    item.latitude = self._home_position.get('latitude')
+                    item.longitude = self._home_position.get('longitude')
+                    if item.latitude is not None and item.longitude is not None:
+                        fixes.append(f"Set takeoff location from home position: {item.latitude:.6f}, {item.longitude:.6f}")
+                # If no home_position available, leave coordinates as None
             else:
                 # Use smart location defaulting if configured for other command types
                 use_last_waypoint = getattr(self.settings.agent, f"{command_type}_use_last_waypoint_location", False)

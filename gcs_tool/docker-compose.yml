@@ -8,4 +8,5 @@ services:
     network_mode: host
     environment:
       - PYTHONUNBUFFERED=1
+      - MAVLINK20=1
     restart: unless-stopped
