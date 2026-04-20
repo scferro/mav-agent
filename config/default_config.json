@@ -65,6 +65,15 @@
     
     "default_search_target": "",
     "default_detection_behavior": "tag_and_continue",
-    "default_distance_units": "feet"
+    "default_distance_units": "feet",
+
+    "default_vehicle_type": "multicopter",
+    "vtol_auto_add_transition_after_takeoff": true,
+    "vtol_auto_add_transition_before_rtl": true,
+
+    "land_default_altitude": 0.0,
+    "land_altitude_units": "feet",
+    "land_min_altitude": 0.0,
+    "land_max_altitude": 1000.0
   }
 }

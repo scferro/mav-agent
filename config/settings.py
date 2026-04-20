@@ -99,6 +99,17 @@ class AgentConfig:
     default_search_target: str = ""             # Empty = no search
     default_detection_behavior: str = "tag_and_continue"
     
+    # === LAND PARAMETERS ===
+    land_default_altitude: float = 0.0
+    land_altitude_units: str = "feet"
+    land_min_altitude: float = 0.0
+    land_max_altitude: float = 1000.0
+
+    # === VEHICLE TYPE DEFAULTS ===
+    default_vehicle_type: str = "multicopter"
+    vtol_auto_add_transition_after_takeoff: bool = True
+    vtol_auto_add_transition_before_rtl: bool = True
+
     # === DISTANCE/HEADING PARAMETERS ===
     default_distance_units: str = ""
 

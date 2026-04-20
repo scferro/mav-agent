@@ -19,6 +19,7 @@ class MissionManager:
         self.current_mission: Optional[Mission] = None
         self.current_action: Optional[MissionItem] = None  # For command mode
         self.mode = mode
+        self.vehicle_type: Optional[str] = None
         self.validator = MissionValidator(get_settings())
     
     def create_mission(self) -> Mission:
@@ -45,6 +46,10 @@ class MissionManager:
     def set_mode(self, mode: str):
         """Set the validation mode"""
         self.mode = mode
+
+    def set_vehicle_type(self, vehicle_type: Optional[str]):
+        """Set the vehicle type for validation"""
+        self.vehicle_type = vehicle_type
     
     def insert_item_at(self, item: MissionItem, position: Optional[int] = None) -> MissionItem:
         """Insert mission item at specific position or append to end"""
@@ -214,17 +219,62 @@ class MissionManager:
         return self.insert_item_at(item, insert_at)
     
     
-    def validate_mission(self, home_position: Optional[Dict] = None) -> Tuple[bool, List[str]]:
+    def add_transition(self, target_state: str, insert_at: Optional[int] = None) -> MissionItem:
+        """Add VTOL transition command
+
+        Args:
+            target_state: 'fw' for forward flight or 'mc' for multicopter/hover
+            insert_at: Optional position to insert at (1-based)
+        """
+        mission = self._get_current_mission_or_raise()
+
+        item = MissionItem(
+            seq=0,
+            command_type='transition',
+            transition_state=target_state,
+        )
+        return self.insert_item_at(item, insert_at)
+
+    def add_land(self, latitude: Optional[float] = None, longitude: Optional[float] = None,
+                 altitude: Optional[float] = None, altitude_units: Optional[str] = None,
+                 mgrs: Optional[str] = None,
+                 distance: Optional[float] = None, heading: Optional[str] = None,
+                 distance_units: Optional[str] = None, relative_reference_frame: Optional[str] = None,
+                 approach_altitude: Optional[float] = None,
+                 insert_at: Optional[int] = None) -> MissionItem:
+        """Add land command at specific location"""
+        mission = self._get_current_mission_or_raise()
+
+        item = MissionItem(
+            seq=0,
+            command_type='land',
+            latitude=latitude,
+            longitude=longitude,
+            altitude=altitude,
+            altitude_units=altitude_units,
+            mgrs=mgrs,
+            distance=distance,
+            heading=heading,
+            distance_units=distance_units,
+            relative_reference_frame=relative_reference_frame,
+            approach_altitude=approach_altitude,
+        )
+        return self.insert_item_at(item, insert_at)
+
+    def validate_mission(self, home_position: Optional[Dict] = None, vehicle_type: Optional[str] = None) -> Tuple[bool, List[str]]:
         """Validate mission for safety and completeness
 
         Args:
             home_position: Dict with 'latitude', 'longitude' from GCS (optional but recommended)
+            vehicle_type: Override vehicle type (falls back to self.vehicle_type)
         """
         mission = self._get_current_mission_or_raise()
+        effective_vehicle_type = vehicle_type if vehicle_type is not None else self.vehicle_type
         is_valid, errors, fixes_applied = self.validator.validate_mission(
             mission,
             self.mode,
-            home_position=home_position
+            home_position=home_position,
+            vehicle_type=effective_vehicle_type
         )
 
         # Combine errors and fixes for reporting
@@ -290,7 +340,15 @@ class MissionManager:
                 # Always show heading for takeoff commands (VTOL transition direction)
                 if item.command_type == 'takeoff' and hasattr(item, 'heading') and item.heading is not None:
                     item_data["heading"] = item.heading
-                
+
+                # Show transition state for transition commands
+                if item.command_type == 'transition' and hasattr(item, 'transition_state') and item.transition_state is not None:
+                    item_data["target_state"] = item.transition_state
+
+                # Show approach altitude for land commands
+                if item.command_type == 'land' and hasattr(item, 'approach_altitude') and item.approach_altitude is not None:
+                    item_data["approach_altitude"] = item.approach_altitude
+
                 # Show search parameters if any are specified (for all command types)
                 if ((hasattr(item, 'search_target') and item.search_target is not None) or (hasattr(item, 'detection_behavior') and item.detection_behavior is not None)):
                     search_target = item.search_target if item.search_target is not None else "(search_target)"
@@ -309,7 +367,7 @@ class MissionManager:
             raise ValueError("RTL commands are not allowed as current action")
         
         # Validate command type
-        allowed_types = ['takeoff', 'waypoint', 'loiter', 'survey']
+        allowed_types = ['takeoff', 'waypoint', 'loiter', 'survey', 'land', 'transition']
         command_type = getattr(action, 'command_type', None)
         if command_type not in allowed_types:
             raise ValueError(f"Invalid command type '{command_type}'. Allowed types: {', '.join(allowed_types)}")

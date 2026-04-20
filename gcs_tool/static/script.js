@@ -51,12 +51,50 @@ class MAVLinkGCS {
             telemHeading: document.getElementById('telemHeading'),
             telemArmed: document.getElementById('telemArmed'),
             btnReconnect: document.getElementById('btnReconnect'),
+            btnArm: document.getElementById('btnArm'),
+            btnDisarm: document.getElementById('btnDisarm'),
         };
     }
 
     attachEventListeners() {
         if (this.elements.btnReconnect) {
             this.elements.btnReconnect.addEventListener('click', () => this.reconnect());
+        }
+        if (this.elements.btnArm) {
+            this.elements.btnArm.addEventListener('click', () => this.sendArmDisarm(true));
+        }
+        if (this.elements.btnDisarm) {
+            this.elements.btnDisarm.addEventListener('click', () => this.sendArmDisarm(false));
+        }
+    }
+
+    async sendArmDisarm(arm) {
+        try {
+            const response = await fetch(`${this.serverUrl}/api/send-command`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    command_data: {
+                        target_system: 1,
+                        target_component: 1,
+                        frame: 0,
+                        command: 400,  // MAV_CMD_COMPONENT_ARM_DISARM
+                        param1: arm ? 1 : 0,
+                        param2: 0,
+                        param3: 0,
+                        param4: 0,
+                        x: 0,
+                        y: 0,
+                        z: 0,
+                    }
+                })
+            });
+            const result = await response.json();
+            if (!result.success) {
+                console.error(`${arm ? 'Arm' : 'Disarm'} failed:`, result.error);
+            }
+        } catch (error) {
+            console.error(`${arm ? 'Arm' : 'Disarm'} failed:`, error);
         }
     }
 
@@ -165,6 +203,12 @@ class MAVLinkGCS {
         if (sendBtn && window.mavlinkClient) {
             sendBtn.disabled = !this.connected || !window.mavlinkClient.lastResult;
         }
+
+        // Update arm/disarm button state
+        const btnArm = document.getElementById('btnArm');
+        const btnDisarm = document.getElementById('btnDisarm');
+        if (btnArm) btnArm.disabled = !this.connected || this.telemetry.armed;
+        if (btnDisarm) btnDisarm.disabled = !this.connected || !this.telemetry.armed;
     }
 
 }

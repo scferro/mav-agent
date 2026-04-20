@@ -30,6 +30,8 @@ class MAVLinkConnection:
         self.altitude = None
         self.heading = None
         self.armed = False
+        self.vehicle_mav_type = None  # Raw MAV_TYPE integer
+        self.vehicle_type = None      # Classified category string
 
         self.running = False
         self.thread = None
@@ -98,6 +100,14 @@ class MAVLinkConnection:
 
         if msg_type == 'HEARTBEAT':
             self.armed = bool(msg.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED)
+            # Extract vehicle type from heartbeat
+            if hasattr(msg, 'type'):
+                new_mav_type = msg.type
+                if new_mav_type != self.vehicle_mav_type:
+                    from core.vehicle_types import classify_vehicle
+                    self.vehicle_mav_type = new_mav_type
+                    self.vehicle_type = classify_vehicle(new_mav_type)
+                    print(f"🚁 Vehicle type detected: MAV_TYPE={new_mav_type} -> {self.vehicle_type}")
             self._broadcast_telemetry()
 
         elif msg_type == 'HOME_POSITION':
@@ -134,7 +144,9 @@ class MAVLinkConnection:
                 'position': self.current_position,
                 'altitude': self.altitude,
                 'heading': self.heading,
-                'armed': self.armed
+                'armed': self.armed,
+                'vehicle_type': self.vehicle_type,
+                'vehicle_mav_type': self.vehicle_mav_type,
             }
             self.socketio.emit('telemetry', telemetry, namespace='/ws/telemetry')
 
@@ -188,7 +200,9 @@ class GCSServer:
                     'position': self.mavlink.current_position,
                     'altitude': self.mavlink.altitude,
                     'heading': self.mavlink.heading,
-                    'armed': self.mavlink.armed
+                    'armed': self.mavlink.armed,
+                    'vehicle_type': self.mavlink.vehicle_type,
+                    'vehicle_mav_type': self.mavlink.vehicle_mav_type,
                 }
                 emit('telemetry', telemetry)
 
@@ -221,6 +235,10 @@ class GCSServer:
                 # Add home_position from GCS telemetry
                 if self.mavlink and self.mavlink.home_position:
                     data['home_position'] = self.mavlink.home_position
+
+                # Inject vehicle_type from GCS telemetry (if not already specified)
+                if self.mavlink and self.mavlink.vehicle_type and 'vehicle_type' not in data:
+                    data['vehicle_type'] = self.mavlink.vehicle_type
 
                 # Forward to LLM Server
                 response = requests.post(

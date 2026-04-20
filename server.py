@@ -117,7 +117,8 @@ class MAVLinkAgentServer:
                 user_input = data['user_input']
                 mode = data.get('mode', 'mission')  # Default to mission mode
                 mission_state_mavlink = data.get('mission_state', None)
-                home_position = data.get('home_position', None)  # NEW: from GCS
+                home_position = data.get('home_position', None)  # From GCS
+                vehicle_type = data.get('vehicle_type', 'multicopter')  # From GCS or manual
 
                 # Validate mode
                 if mode not in ['mission', 'command']:
@@ -145,7 +146,8 @@ class MAVLinkAgentServer:
                     user_input=user_input,
                     mode=mode,
                     mission_state=mission_state_internal,
-                    home_position=home_position
+                    home_position=home_position,
+                    vehicle_type=vehicle_type
                 )
 
                 # Convert result mission to MAVLink format
@@ -157,10 +159,10 @@ class MAVLinkAgentServer:
 
                     if mode == 'command' and len(mission.items) == 1:
                         # Command mode: return a single COMMAND_INT
-                        result['command'] = to_command_int(mission.items[0])
+                        result['command'] = to_command_int(mission.items[0], vehicle_type=vehicle_type)
                     else:
                         # Mission mode: return list of MISSION_ITEM_INT dicts
-                        result['mission_items'] = mission.to_mavlink()
+                        result['mission_items'] = mission.to_mavlink(vehicle_type=vehicle_type)
 
                     del result['mission_state']  # Remove old format
 

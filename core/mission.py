@@ -38,6 +38,10 @@ class MissionItem:
     # Search parameters (for waypoint, loiter, survey)
     search_target: Optional[str] = None
     detection_behavior: Optional[str] = None
+
+    # VTOL-specific parameters
+    transition_state: Optional[str] = None  # "fw" or "mc" for VTOL transition commands
+    approach_altitude: Optional[float] = None  # For VTOL land approach altitude
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary format"""
@@ -60,6 +64,8 @@ class MissionItem:
             'relative_reference_frame': self.relative_reference_frame,
             'search_target': self.search_target,
             'detection_behavior': self.detection_behavior,
+            'transition_state': self.transition_state,
+            'approach_altitude': self.approach_altitude,
         }
 
     @classmethod
@@ -93,6 +99,8 @@ class MissionItem:
             relative_reference_frame=data.get('relative_reference_frame'),
             search_target=data.get('search_target'),
             detection_behavior=data.get('detection_behavior'),
+            transition_state=data.get('transition_state'),
+            approach_altitude=data.get('approach_altitude'),
         )
 
 @dataclass
@@ -140,10 +148,10 @@ class Mission:
 
         return mission
 
-    def to_mavlink(self) -> List[Dict[str, Any]]:
+    def to_mavlink(self, vehicle_type: Optional[str] = None) -> List[Dict[str, Any]]:
         """Convert mission to MAVLink MISSION_ITEM_INT format"""
         from core.mavlink_format import mission_to_mavlink
-        return mission_to_mavlink(self)
+        return mission_to_mavlink(self, vehicle_type=vehicle_type)
 
     @classmethod
     def from_mavlink(cls, mav_items: List[Dict[str, Any]]) -> 'Mission':

@@ -107,7 +107,9 @@ class MAVLinkToolBase(BaseTool):
             'waypoint': "Waypoint",
             'loiter': "Loiter",
             'rtl': "Return to Launch",
-            'survey': "Survey"
+            'survey': "Survey",
+            'land': "Land",
+            'transition': "VTOL Transition",
         }
         return command_map.get(command_type, f"Unknown {command_type}")
     
@@ -164,49 +166,72 @@ class MAVLinkToolBase(BaseTool):
         else:
             return "coordinates not specified"
 
-def get_command_tools(mission_manager: MissionManager) -> list:
-    """Get MAVLink tools for command mode - add tools only"""
+def _build_all_tools(mission_manager: MissionManager) -> dict:
+    """Build a dict of all available tools by name"""
     from .add_waypoint_tool import AddWaypointTool
     from .add_takeoff_tool import AddTakeoffTool
     from .add_rtl_tool import AddRTLTool
     from .add_loiter_tool import AddLoiterTool
     from .add_survey_tool import AddSurveyTool
-
-    return [
-        AddWaypointTool(mission_manager),
-        AddTakeoffTool(mission_manager),
-        AddSurveyTool(mission_manager),
-        AddRTLTool(mission_manager),
-        AddLoiterTool(mission_manager),
-    ]
-
-def get_mission_tools(mission_manager: MissionManager) -> list:
-    """Get all MAVLink mission planning tools for mission mode"""
-    from .add_waypoint_tool import AddWaypointTool
-    from .add_takeoff_tool import AddTakeoffTool
-    from .add_rtl_tool import AddRTLTool
-    from .add_loiter_tool import AddLoiterTool
-    from .add_survey_tool import AddSurveyTool
+    from .add_land_tool import AddLandTool
+    from .add_transition_tool import AddTransitionTool
     from .update_mission_item_tool import UpdateMissionItemTool
     from .delete_mission_item_tool import DeleteMissionItemTool
     from .reorder_item_tool import ReorderItemTool
     from .move_item_tool import MoveItemTool
-    
-    return [
-        AddWaypointTool(mission_manager),
-        AddTakeoffTool(mission_manager),
-        AddSurveyTool(mission_manager),
-        AddRTLTool(mission_manager),
-        AddLoiterTool(mission_manager),
-        UpdateMissionItemTool(mission_manager),
-        DeleteMissionItemTool(mission_manager),
-        ReorderItemTool(mission_manager),
-        MoveItemTool(mission_manager),
-    ]
 
-def get_tools_for_mode(mission_manager: MissionManager, mode: str) -> list:
-    """Get appropriate tools for the specified mode"""
+    return {
+        'add_waypoint': AddWaypointTool(mission_manager),
+        'add_takeoff': AddTakeoffTool(mission_manager),
+        'add_rtl': AddRTLTool(mission_manager),
+        'add_loiter': AddLoiterTool(mission_manager),
+        'add_survey': AddSurveyTool(mission_manager),
+        'add_land': AddLandTool(mission_manager),
+        'add_transition': AddTransitionTool(mission_manager),
+        'update_mission_item': UpdateMissionItemTool(mission_manager),
+        'delete_mission_item': DeleteMissionItemTool(mission_manager),
+        'reorder_item': ReorderItemTool(mission_manager),
+        'move_item': MoveItemTool(mission_manager),
+    }
+
+
+# Command mode only gets "add" tools
+_COMMAND_MODE_TOOLS = {
+    'add_waypoint', 'add_takeoff', 'add_rtl', 'add_loiter',
+    'add_survey', 'add_land', 'add_transition',
+}
+
+
+def _filter_tools_for_vehicle(all_tools: dict, vehicle_type: str = None) -> dict:
+    """Filter tools based on vehicle type availability"""
+    if vehicle_type is None:
+        return all_tools
+
+    from core.vehicle_types import get_tools_for_vehicle
+    allowed = get_tools_for_vehicle(vehicle_type)
+    return {name: tool for name, tool in all_tools.items() if name in allowed}
+
+
+def get_command_tools(mission_manager: MissionManager, vehicle_type: str = None) -> list:
+    """Get MAVLink tools for command mode - add tools only, filtered by vehicle type"""
+    all_tools = _build_all_tools(mission_manager)
+    # Filter to command-mode tools only
+    command_tools = {k: v for k, v in all_tools.items() if k in _COMMAND_MODE_TOOLS}
+    # Filter by vehicle type
+    filtered = _filter_tools_for_vehicle(command_tools, vehicle_type)
+    return list(filtered.values())
+
+
+def get_mission_tools(mission_manager: MissionManager, vehicle_type: str = None) -> list:
+    """Get all MAVLink mission planning tools for mission mode, filtered by vehicle type"""
+    all_tools = _build_all_tools(mission_manager)
+    filtered = _filter_tools_for_vehicle(all_tools, vehicle_type)
+    return list(filtered.values())
+
+
+def get_tools_for_mode(mission_manager: MissionManager, mode: str, vehicle_type: str = None) -> list:
+    """Get appropriate tools for the specified mode and vehicle type"""
     if mode == "command":
-        return get_command_tools(mission_manager)
+        return get_command_tools(mission_manager, vehicle_type)
     else:
-        return get_mission_tools(mission_manager)
+        return get_mission_tools(mission_manager, vehicle_type)

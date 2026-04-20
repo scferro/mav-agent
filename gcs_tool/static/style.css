@@ -842,6 +842,41 @@ body {
 }
 
 
+/* Arm/Disarm buttons */
+.arm-btn, .disarm-btn {
+    padding: 4px 10px;
+    border: none;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+    margin-left: 4px;
+}
+
+.arm-btn {
+    background: var(--warning-color);
+    color: white;
+}
+
+.arm-btn:hover:not(:disabled) {
+    background: #b45309;
+}
+
+.disarm-btn {
+    background: var(--error-color);
+    color: white;
+}
+
+.disarm-btn:hover:not(:disabled) {
+    background: #b91c1c;
+}
+
+.arm-btn:disabled, .disarm-btn:disabled {
+    background: var(--text-muted);
+    cursor: not-allowed;
+}
+
 /* Mobile responsiveness for telemetry */
 @media (max-width: 768px) {
     .telemetry-grid {

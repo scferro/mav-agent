@@ -45,17 +45,20 @@ class MAVLinkAgent:
 
         # Agent state
         self.current_mode = None
+        self.current_vehicle_type = None
         self.agent_graph = None
         self.chat_history = []
     
-    def _setup_tools_for_mode(self, mode: str):
+    def _setup_tools_for_mode(self, mode: str, vehicle_type: str = None):
         """Setup tools and mission manager for specific mode"""
         # Create mission manager first
         self.mission_manager = MissionManager(mode=mode)
+        self.mission_manager.set_vehicle_type(vehicle_type)
+        self.current_vehicle_type = vehicle_type
 
         # Model interface already initialized - reuse it
-        # Only recreate tools (lightweight)
-        self.tools = get_tools_for_mode(self.mission_manager, mode)
+        # Only recreate tools (lightweight, filtered by vehicle type)
+        self.tools = get_tools_for_mode(self.mission_manager, mode, vehicle_type=vehicle_type)
 
         # Debug: print tool info
         if self.verbose:
@@ -91,13 +94,13 @@ class MAVLinkAgent:
             raise RuntimeError(f"Failed to initialize agent: {str(e)}")
     
     
-    def mission_mode(self, user_input: str) -> Dict[str, Any]:
+    def mission_mode(self, user_input: str, vehicle_type: str = None) -> Dict[str, Any]:
         """Execute mission mode - interactive mission building"""
-        
-        # Setup tools for mission mode only if not already in mission mode
-        if self.current_mode != "mission":
+
+        # Setup tools for mission mode if not already in mission mode or vehicle_type changed
+        if self.current_mode != "mission" or self.current_vehicle_type != vehicle_type:
             self.current_mode = "mission"
-            self._setup_tools_for_mode("mission")
+            self._setup_tools_for_mode("mission", vehicle_type=vehicle_type)
         
         # Set mission manager to mission mode for strict validation
         self.mission_manager.set_mode("mission")
@@ -108,7 +111,7 @@ class MAVLinkAgent:
             self.mission_manager.create_mission()
             
             # Inject system prompt only once when mission is first created
-            base_system_prompt = get_system_prompt("mission")
+            base_system_prompt = get_system_prompt("mission", vehicle_type=vehicle_type)
             self.chat_history.append(SystemMessage(content=base_system_prompt))
         
         try:
@@ -203,12 +206,12 @@ class MAVLinkAgent:
                 "output": f"Mission creation failed: {str(e)}"
             }
     
-    def command_mode(self, user_input: str) -> Dict[str, Any]:
+    def command_mode(self, user_input: str, vehicle_type: str = None) -> Dict[str, Any]:
         """Execute command mode - single commands with reset"""
         self.current_mode = "command"
-        
-        # Setup tools for command mode (always reset for command mode)  
-        self._setup_tools_for_mode("command")
+
+        # Setup tools for command mode (always reset for command mode)
+        self._setup_tools_for_mode("command", vehicle_type=vehicle_type)
         
         # Set mission manager to command mode for relaxed validation
         self.mission_manager.set_mode("command")
@@ -217,7 +220,7 @@ class MAVLinkAgent:
         self.chat_history = []
         self.mission_manager.create_mission()
 
-        system_prompt = get_system_prompt("command")
+        system_prompt = get_system_prompt("command", vehicle_type=vehicle_type)
         
         try:
             # Append current action state to user message for context in command mode
@@ -344,7 +347,8 @@ class MAVLinkAgent:
              user_input: str,
              mode: str = "mission",
              mission_state: Optional[Dict] = None,
-             home_position: Optional[Dict] = None) -> Dict[str, Any]:
+             home_position: Optional[Dict] = None,
+             vehicle_type: Optional[str] = None) -> Dict[str, Any]:
         """
         Unified stateless planning endpoint.
 
@@ -353,24 +357,15 @@ class MAVLinkAgent:
             mode: 'mission' or 'command'
             mission_state: Current mission or action state (optional)
             home_position: Dict with 'latitude', 'longitude' from GCS (optional but recommended)
+            vehicle_type: Vehicle category string (e.g., 'multicopter', 'vtol')
 
         Returns:
-            {
-                "success": bool,
-                "mode": str,
-                "output": str,
-                "mission_items": List[Dict],      # Full mission
-                "added_items": List[Dict],         # What was new
-                "modified_items": List[Dict],      # What changed
-                "deleted_items": List[Dict],       # What was removed
-                "validation": {
-                    "valid": bool,
-                    "errors": List[str],
-                    "warnings": List[str]
-                }
-            }
+            Dict with success, mode, output, mission_items, deltas, and validation
         """
         from core.mission import Mission
+
+        # Default to multicopter if not specified
+        vehicle_type = vehicle_type or 'multicopter'
 
         # Save current state
         original_mission = self.mission_manager.get_mission() if self.mission_manager else None
@@ -385,18 +380,19 @@ class MAVLinkAgent:
 
             # Route to appropriate mode handler
             if mode == "mission":
-                result = self.mission_mode(user_input)
+                result = self.mission_mode(user_input, vehicle_type=vehicle_type)
             elif mode == "command":
-                result = self.command_mode(user_input)
+                result = self.command_mode(user_input, vehicle_type=vehicle_type)
             else:
                 raise ValueError(f"Invalid mode: {mode}")
 
-            # Enhance response with delta information (pass home_position for validation)
+            # Enhance response with delta information (pass home_position and vehicle_type for validation)
             enhanced_result = self._enhance_with_deltas(
                 result,
                 original_mission,
                 self.mission_manager.get_mission(),
-                home_position
+                home_position,
+                vehicle_type
             )
 
             return enhanced_result
@@ -410,7 +406,8 @@ class MAVLinkAgent:
     def _enhance_with_deltas(self, result: Dict,
                             old_mission,
                             new_mission,
-                            home_position: Optional[Dict] = None) -> Dict:
+                            home_position: Optional[Dict] = None,
+                            vehicle_type: Optional[str] = None) -> Dict:
         """Calculate what changed in the mission
 
         Args:
@@ -418,6 +415,7 @@ class MAVLinkAgent:
             old_mission: Mission state before operation
             new_mission: Mission state after operation
             home_position: Dict with 'latitude', 'longitude' from GCS (optional)
+            vehicle_type: Vehicle category string (optional)
 
         Returns:
             Enhanced result with delta information
@@ -449,7 +447,7 @@ class MAVLinkAgent:
 
         # Add validation information (pass home_position for coordinate conversion)
         if new_mission:
-            valid, errors = self.mission_manager.validate_mission(home_position=home_position)
+            valid, errors = self.mission_manager.validate_mission(home_position=home_position, vehicle_type=vehicle_type)
             result['validation'] = {
                 'valid': valid,
                 'errors': errors if errors else [],

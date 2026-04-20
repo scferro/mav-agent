@@ -16,13 +16,15 @@ class MissionValidator:
         self.settings = settings
     
     def validate_mission(self, mission: Mission, mode: str,
-                        home_position: Optional[Dict] = None) -> Tuple[bool, List[str], List[str]]:
+                        home_position: Optional[Dict] = None,
+                        vehicle_type: Optional[str] = None) -> Tuple[bool, List[str], List[str]]:
         """Validate mission for safety and completeness
 
         Args:
             mission: Mission to validate
             mode: 'mission' or 'command'
             home_position: Dict with 'latitude', 'longitude' from GCS (optional but recommended)
+            vehicle_type: Vehicle category string (e.g., 'multicopter', 'vtol', 'fixed_wing', 'ground')
         """
         errors = []
         fixes_applied = []
@@ -37,7 +39,7 @@ class MissionValidator:
         # Different validation rules based on mode
         if mode == "mission":
             # Validate mission mode rules (with auto-fix integration)
-            mode_errors, mode_fixes = self._validate_mission_mode_rules(mission)
+            mode_errors, mode_fixes = self._validate_mission_mode_rules(mission, vehicle_type)
             errors.extend(mode_errors)
             fixes_applied.extend(mode_fixes)
 
@@ -49,12 +51,12 @@ class MissionValidator:
 
         # Complete missing parameters (applies to both mission and command modes)
         if self.settings.agent.auto_complete_parameters:
-            param_fixes = self._complete_missing_parameters(mission)
+            param_fixes = self._complete_missing_parameters(mission, vehicle_type)
             fixes_applied.extend(param_fixes)
 
         # Validate individual items (applies to both modes)
         for i, item in enumerate(mission.items):
-            item_errors = self.validate_mission_item(item, i)
+            item_errors = self.validate_mission_item(item, i, vehicle_type)
             errors.extend(item_errors)
 
         # Convert all relative positioning to absolute coordinates and clear relative attributes
@@ -64,24 +66,37 @@ class MissionValidator:
 
         return len(errors) == 0, errors, fixes_applied
     
-    def validate_mission_item(self, item: MissionItem, index: int) -> List[str]:
+    def validate_mission_item(self, item: MissionItem, index: int,
+                             vehicle_type: Optional[str] = None) -> List[str]:
         """Validate individual mission item"""
         errors = []
-        
-        # Check navigation commands for altitude limits
-        nav_command_types = ['waypoint', 'takeoff', 'loiter', 'rtl']
-        
+
         command_type = getattr(item, 'command_type', None)
+
+        # Ground vehicles should not have altitude
+        if vehicle_type == 'ground':
+            if command_type in ['takeoff', 'land', 'loiter', 'survey']:
+                errors.append(f"Item {index + 1}: '{command_type}' is not valid for ground vehicles")
+            return errors
+
+        # Non-VTOL vehicles should not have transition commands
+        if command_type == 'transition' and vehicle_type != 'vtol':
+            errors.append(f"Item {index + 1}: Transition commands are only valid for VTOL aircraft")
+
+        # Check navigation commands for altitude limits
+        nav_command_types = ['waypoint', 'takeoff', 'loiter', 'rtl', 'land']
+
         if command_type in nav_command_types:
             # Check altitude from the field where it's actually stored
             altitude_value = getattr(item, 'altitude', None)
-            if altitude_value is not None and altitude_value <= 0:
+            if altitude_value is not None and altitude_value <= 0 and command_type != 'land':
                 errors.append(f"Item {index}: Altitude must be positive")
-        
-        # Validate reference frame positioning rules
-        positioning_errors = self._validate_positioning_consistency(item, index)
-        errors.extend(positioning_errors)
-                        
+
+        # Validate reference frame positioning rules (skip for transition - no coordinates)
+        if command_type != 'transition':
+            positioning_errors = self._validate_positioning_consistency(item, index)
+            errors.extend(positioning_errors)
+
         return errors
     
     def _validate_positioning_consistency(self, item: MissionItem, index: int) -> List[str]:
@@ -115,53 +130,62 @@ class MissionValidator:
         
         return errors
     
-    def _validate_mission_mode_rules(self, mission: Mission) -> Tuple[List[str], List[str]]:
+    def _validate_mission_mode_rules(self, mission: Mission,
+                                     vehicle_type: Optional[str] = None) -> Tuple[List[str], List[str]]:
         """Validate mission mode specific rules with optional auto-fix"""
         errors = []
         fixes = []
-        
+
+        # Ground vehicles: skip takeoff/RTL structure requirements
+        is_ground = (vehicle_type == 'ground')
+
         has_takeoff = any(getattr(item, 'command_type', None) == 'takeoff' for item in mission.items)
         has_rtl = any(getattr(item, 'command_type', None) == 'rtl' for item in mission.items)
-        
-        # Check takeoff positioning - auto-fix or error
-        if self.settings.agent.takeoff_must_be_first and has_takeoff:
-            if getattr(mission.items[0], 'command_type', None) != 'takeoff':
-                if self.settings.agent.auto_fix_positioning:
-                    self._move_takeoff_to_start(mission)
-                    fixes.append("Moved takeoff command to the beginning of mission")
-                else:
-                    errors.append("Takeoff command is not the first item - takeoff must be the initial command")
 
-        # Check RTL positioning - auto-fix or error
-        if self.settings.agent.rtl_must_be_last and has_rtl:
-            if getattr(mission.items[-1], 'command_type', None) != 'rtl':
-                if self.settings.agent.auto_fix_positioning:
-                    self._move_rtl_to_end(mission)
-                    fixes.append("Moved RTL command to the end of mission")
-                else:
-                    errors.append("RTL command is not the last item - RTL must be at the last command")
-        
-        # NEW: Add missing commands if enabled
-        if self.settings.agent.auto_add_missing_takeoff:
-            takeoff_fixes = self._ensure_takeoff_exists(mission)
-            fixes.extend(takeoff_fixes)
-        
-        if self.settings.agent.auto_add_missing_rtl:
-            rtl_fixes = self._ensure_rtl_exists(mission)
-            fixes.extend(rtl_fixes)
-        
-        # Parameter completion is now handled at the main validation level
-        
+        if not is_ground:
+            # Check takeoff positioning - auto-fix or error
+            if self.settings.agent.takeoff_must_be_first and has_takeoff:
+                if getattr(mission.items[0], 'command_type', None) != 'takeoff':
+                    if self.settings.agent.auto_fix_positioning:
+                        self._move_takeoff_to_start(mission)
+                        fixes.append("Moved takeoff command to the beginning of mission")
+                    else:
+                        errors.append("Takeoff command is not the first item - takeoff must be the initial command")
+
+            # Check RTL positioning - auto-fix or error
+            if self.settings.agent.rtl_must_be_last and has_rtl:
+                if getattr(mission.items[-1], 'command_type', None) != 'rtl':
+                    if self.settings.agent.auto_fix_positioning:
+                        self._move_rtl_to_end(mission)
+                        fixes.append("Moved RTL command to the end of mission")
+                    else:
+                        errors.append("RTL command is not the last item - RTL must be at the last command")
+
+            # Add missing commands if enabled
+            if self.settings.agent.auto_add_missing_takeoff:
+                takeoff_fixes = self._ensure_takeoff_exists(mission)
+                fixes.extend(takeoff_fixes)
+
+            if self.settings.agent.auto_add_missing_rtl:
+                rtl_fixes = self._ensure_rtl_exists(mission)
+                fixes.extend(rtl_fixes)
+
+        # VTOL transition auto-fix
+        if vehicle_type == 'vtol':
+            vtol_fixes = self._ensure_vtol_transitions(mission)
+            fixes.extend(vtol_fixes)
+
         # Check for multiple takeoffs/RTLs (after auto-addition)
-        takeoff_count = sum(1 for item in mission.items if getattr(item, 'command_type', None) == 'takeoff')
-        rtl_count = sum(1 for item in mission.items if getattr(item, 'command_type', None) == 'rtl')
-        
-        if self.settings.agent.single_takeoff_only and takeoff_count > 1:
-            errors.append(f"Mission has {takeoff_count} takeoff commands - only one is allowed")
-        
-        if self.settings.agent.single_rtl_only and rtl_count > 1:
-            errors.append(f"Mission has {rtl_count} RTL commands - only one is allowed")
-        
+        if not is_ground:
+            takeoff_count = sum(1 for item in mission.items if getattr(item, 'command_type', None) == 'takeoff')
+            rtl_count = sum(1 for item in mission.items if getattr(item, 'command_type', None) == 'rtl')
+
+            if self.settings.agent.single_takeoff_only and takeoff_count > 1:
+                errors.append(f"Mission has {takeoff_count} takeoff commands - only one is allowed")
+
+            if self.settings.agent.single_rtl_only and rtl_count > 1:
+                errors.append(f"Mission has {rtl_count} RTL commands - only one is allowed")
+
         return errors, fixes
     
     def _move_takeoff_to_start(self, mission: Mission):
@@ -211,8 +235,6 @@ class MissionValidator:
                 command_type='takeoff',
                 altitude=self.settings.agent.takeoff_default_altitude,
                 altitude_units=self.settings.agent.takeoff_altitude_units,
-                latitude=self.settings.agent.takeoff_initial_latitude,
-                longitude=self.settings.agent.takeoff_initial_longitude,
                 heading=self.settings.agent.takeoff_default_heading
             )
             mission.items.insert(0, takeoff)
@@ -243,7 +265,69 @@ class MissionValidator:
         
         return fixes
 
-    def _complete_missing_parameters(self, mission: Mission) -> List[str]:
+    def _ensure_vtol_transitions(self, mission: Mission) -> List[str]:
+        """Auto-insert VTOL transition commands if missing.
+
+        Rules:
+        - After takeoff, if the next item is not a transition(fw), insert one.
+        - Before RTL or land, if the previous item is not a transition(mc), insert one.
+        """
+        fixes = []
+        vtol_auto_after_takeoff = getattr(self.settings.agent, 'vtol_auto_add_transition_after_takeoff', True)
+        vtol_auto_before_rtl = getattr(self.settings.agent, 'vtol_auto_add_transition_before_rtl', True)
+
+        # Auto-insert transition(fw) after takeoff
+        if vtol_auto_after_takeoff:
+            for i, item in enumerate(mission.items):
+                if getattr(item, 'command_type', None) == 'takeoff':
+                    # Check if next item is already a transition to fw
+                    next_idx = i + 1
+                    if next_idx < len(mission.items):
+                        next_item = mission.items[next_idx]
+                        if (getattr(next_item, 'command_type', None) == 'transition' and
+                                getattr(next_item, 'transition_state', None) == 'fw'):
+                            continue  # Already has transition
+                    # Insert transition(fw) after takeoff
+                    transition = MissionItem(
+                        seq=0,
+                        command_type='transition',
+                        transition_state='fw',
+                    )
+                    mission.items.insert(i + 1, transition)
+                    self._resequence_items(mission)
+                    fixes.append("Auto-added transition to forward flight after takeoff")
+                    break  # Only one takeoff expected
+
+        # Auto-insert transition(mc) before RTL or land
+        if vtol_auto_before_rtl:
+            # Iterate in reverse since we may insert items
+            i = len(mission.items) - 1
+            while i >= 0:
+                item = mission.items[i]
+                cmd_type = getattr(item, 'command_type', None)
+                if cmd_type in ('rtl', 'land'):
+                    # Check if previous item is already a transition to mc
+                    prev_idx = i - 1
+                    if prev_idx >= 0:
+                        prev_item = mission.items[prev_idx]
+                        if (getattr(prev_item, 'command_type', None) == 'transition' and
+                                getattr(prev_item, 'transition_state', None) == 'mc'):
+                            i -= 1
+                            continue  # Already has transition
+                    # Insert transition(mc) before RTL/land
+                    transition = MissionItem(
+                        seq=0,
+                        command_type='transition',
+                        transition_state='mc',
+                    )
+                    mission.items.insert(i, transition)
+                    self._resequence_items(mission)
+                    fixes.append(f"Auto-added transition to hover before {cmd_type}")
+                i -= 1
+
+        return fixes
+
+    def _complete_missing_parameters(self, mission: Mission, vehicle_type: Optional[str] = None) -> List[str]:
         """Complete missing parameters using command-specific defaults and smart strategies"""
         fixes = []
         
@@ -251,16 +335,28 @@ class MissionValidator:
             command_type = getattr(item, 'command_type', None)
             if not command_type:
                 continue
-            
-            # Complete altitude_units FIRST (needed for unit conversion)
-            if hasattr(item, 'altitude_units') and item.altitude_units is None:
-                item.altitude_units = getattr(self.settings.agent, f"{command_type}_altitude_units")
-                fixes.append(f"Set altitude units: {item.altitude_units}")
-            
-            # Complete altitude for all navigation commands (after units are set)
-            if hasattr(item, 'altitude'):
-                altitude_fixes = self._complete_altitude(item, command_type, mission, i)
-                fixes.extend(altitude_fixes)
+
+            # Transition commands have no parameters to complete
+            if command_type == 'transition':
+                continue
+
+            # Ground vehicles: skip altitude completion
+            if vehicle_type == 'ground':
+                item.altitude = None
+                item.altitude_units = None
+                # Still complete coordinates and other params below
+            else:
+                # Complete altitude_units FIRST (needed for unit conversion)
+                if hasattr(item, 'altitude_units') and item.altitude_units is None:
+                    default_units = getattr(self.settings.agent, f"{command_type}_altitude_units", None)
+                    if default_units:
+                        item.altitude_units = default_units
+                        fixes.append(f"Set altitude units: {item.altitude_units}")
+
+                # Complete altitude for all navigation commands (after units are set)
+                if hasattr(item, 'altitude') and command_type in ['takeoff', 'waypoint', 'loiter', 'rtl', 'survey', 'land']:
+                    altitude_fixes = self._complete_altitude(item, command_type, mission, i)
+                    fixes.extend(altitude_fixes)
             
             # Complete radius_units FIRST for loiter/survey (needed for unit conversion)
             if command_type in ['loiter', 'survey'] and hasattr(item, 'radius_units') and item.radius_units is None:
@@ -272,8 +368,8 @@ class MissionValidator:
                 radius_fixes = self._complete_radius(item, command_type)
                 fixes.extend(radius_fixes)
             
-            # Complete coordinates for takeoff/waypoint/loiter/survey if missing
-            if command_type in ['takeoff', 'waypoint', 'loiter', 'survey']:
+            # Complete coordinates for takeoff/waypoint/loiter/survey/land if missing
+            if command_type in ['takeoff', 'waypoint', 'loiter', 'survey', 'land']:
                 coord_fixes = self._complete_coordinates(item, command_type, mission, i)
                 fixes.extend(coord_fixes)
             
@@ -415,21 +511,15 @@ class MissionValidator:
                        hasattr(item, 'heading') and item.heading is not None)
         
         if not (has_lat_lon or has_mgrs or has_relative):
-            # Special handling for takeoff - use initial coordinates from settings
-            if command_type == 'takeoff':
-                item.latitude = self.settings.agent.takeoff_initial_latitude
-                item.longitude = self.settings.agent.takeoff_initial_longitude
-                fixes.append(f"Set takeoff location from settings: {item.latitude:.6f}, {item.longitude:.6f}")
-            else:
-                # Use smart location defaulting if configured for other command types
-                use_last_waypoint = getattr(self.settings.agent, f"{command_type}_use_last_waypoint_location", False)
-                
-                if use_last_waypoint:
-                    last_coords = self._get_last_waypoint_coordinates(mission, index)
-                    if last_coords:
-                        item.latitude, item.longitude = last_coords
-                        fixes.append(f"Set {command_type} location from last waypoint: {item.latitude:.6f}, {item.longitude:.6f}")
-                    # No fallback - if no last waypoint coords available, leave coordinates empty
+            # Use smart location defaulting if configured
+            use_last_waypoint = getattr(self.settings.agent, f"{command_type}_use_last_waypoint_location", False)
+
+            if use_last_waypoint:
+                last_coords = self._get_last_waypoint_coordinates(mission, index)
+                if last_coords:
+                    item.latitude, item.longitude = last_coords
+                    fixes.append(f"Set {command_type} location from last waypoint: {item.latitude:.6f}, {item.longitude:.6f}")
+                # No fallback - if no last waypoint coords available, leave coordinates empty
         
         return fixes
 
@@ -493,7 +583,7 @@ class MissionValidator:
         for item in mission.items:
             # Skip items that don't support positioning
             command_type = getattr(item, 'command_type', None)
-            if command_type not in ['waypoint', 'loiter', 'survey', 'takeoff']:
+            if command_type not in ['waypoint', 'loiter', 'survey', 'takeoff', 'land']:
                 continue
             
             # Check if item has relative positioning that needs conversion
