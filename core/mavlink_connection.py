@@ -220,6 +220,9 @@ class MAVLinkConnection:
                 )
             print(f"Sending MISSION_COUNT: {count} items")
 
+            # Build seq-keyed lookup for safe item access
+            items_by_seq = {item['seq']: item for item in mavlink_items}
+
             # Step 2-4: Respond to requests and wait for ACK in one loop
             items_sent = 0
             timeout = 15  # seconds total
@@ -250,7 +253,9 @@ class MAVLinkConnection:
                     if seq >= count:
                         return {'success': False, 'message': f'Drone requested invalid seq {seq}'}
 
-                    item = mavlink_items[seq]
+                    item = items_by_seq.get(seq)
+                    if item is None:
+                        return {'success': False, 'message': f'No item for requested seq {seq}'}
                     print(f"PX4 requested seq {seq}, sending item")
                     with self.send_lock:
                         self.mav.mav.mission_item_int_send(

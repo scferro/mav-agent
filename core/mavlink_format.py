@@ -68,12 +68,7 @@ def mission_item_to_mavlink(item: 'MissionItem', vehicle_class: str = 'multiroto
     # Get MAVLink command number
     command = COMMAND_TYPE_TO_MAVLINK.get(item.command_type, MAV_CMD_NAV_WAYPOINT)
 
-    # Override command for VTOL vehicles
-    if vehicle_class == 'vtol':
-        if item.command_type == 'takeoff':
-            command = MAV_CMD_NAV_VTOL_TAKEOFF
-        elif item.command_type == 'land':
-            command = MAV_CMD_NAV_VTOL_LAND
+    # Note: NAV_VTOL_TAKEOFF/LAND (84/85) not used — standard NAV_TAKEOFF/LAND works for all vehicle types including VTOL
 
     # Convert coordinates
     x = int((item.latitude or 0) * 1e7)
@@ -89,21 +84,12 @@ def mission_item_to_mavlink(item: 'MissionItem', vehicle_class: str = 'multiroto
     param1 = param2 = param3 = param4 = 0.0
 
     if item.command_type == 'takeoff':
-        if vehicle_class == 'vtol':
-            # MAV_CMD_NAV_VTOL_TAKEOFF (84)
-            # param2: transition heading = 3 (specific heading, provided in param4)
-            param2 = 3.0
-            param4 = heading_to_degrees(item.heading or 0)
-        else:
-            # NAV_TAKEOFF (22)
-            param1 = 0.0  # Min pitch
-            param4 = heading_to_degrees(item.heading or 0)
+        # NAV_TAKEOFF (22) — works for multirotor, fixed-wing, and VTOL
+        param1 = 0.0  # Min pitch
+        param4 = heading_to_degrees(item.heading or 0)
 
     elif item.command_type == 'loiter':
-        if vehicle_class in ('fixed_wing', 'vtol'):
-            param3 = convert_to_meters(item.radius or 0, item.radius_units or 'feet')
-        else:
-            param3 = 0.0  # Hover in place — radius is meaningless for MC/ground
+        param3 = convert_to_meters(item.radius or 0, item.radius_units or 'feet')
 
     elif item.command_type == 'waypoint' or item.command_type == 'survey':
         param1 = 0.0  # Hold time
@@ -176,7 +162,12 @@ def mission_item_from_mavlink(mav_item: Dict[str, Any]) -> 'MissionItem':
 
 def mission_to_mavlink(mission: 'Mission', vehicle_class: str = 'multirotor') -> List[Dict[str, Any]]:
     """Convert Mission to list of MAVLink MISSION_ITEM_INT dicts"""
-    return [mission_item_to_mavlink(item, vehicle_class=vehicle_class) for item in mission.items]
+    items = [mission_item_to_mavlink(item, vehicle_class=vehicle_class) for item in mission.items]
+    for i, item_dict in enumerate(items):
+        item_dict['seq'] = i
+    if items:
+        items[0]['current'] = 1
+    return items
 
 
 def mission_from_mavlink(mav_items: List[Dict[str, Any]]) -> 'Mission':

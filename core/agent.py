@@ -482,7 +482,7 @@ class MAVLinkAgent:
         old_seqs = {item.seq: item for item in old_items}
         new_seqs = {item.seq: item for item in new_items}
 
-        from core.mavlink_format import mission_item_to_mavlink
+        from core.mavlink_format import mission_item_to_mavlink, mission_to_mavlink
 
         added = [mission_item_to_mavlink(item, vehicle_class=vehicle_class) for seq, item in new_seqs.items()
                  if seq not in old_seqs]
@@ -492,7 +492,8 @@ class MAVLinkAgent:
                     if seq in old_seqs and item.to_dict() != old_seqs[seq].to_dict()]
 
         # Add mission_items array to result (serialized AFTER validation, in MAVLink format)
-        result['mission_items'] = [mission_item_to_mavlink(item, vehicle_class=vehicle_class) for item in new_items]
+        # Use mission_to_mavlink so seq normalization and current=1 on first item are applied
+        result['mission_items'] = mission_to_mavlink(new_mission, vehicle_class=vehicle_class) if new_mission else []
         result['added_items'] = added
         result['modified_items'] = modified
         result['deleted_items'] = deleted

@@ -255,6 +255,7 @@ class MissionValidator:
                 altitude_units=self.settings.agent.rtl_altitude_units
             )
             mission.items.append(rtl)
+            self._resequence_items(mission)
             fixes.append(f"Auto-added RTL: {rtl.altitude} {rtl.altitude_units}")
         
         return fixes
